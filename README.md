@@ -13,3 +13,4 @@ Installation:
 4. Goto engine -> manage (F11)
 5. Select Conqueror as the current chess engine
 6. Enjoy
+7. (Optional) Send your queries, comments, complaints or suggestions to pandeaditya7@gmail.com
