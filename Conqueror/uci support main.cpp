@@ -18,9 +18,11 @@
 @author adityapande
 */
 
+///main changes uci[5] -> uci[4]....
+
 #include<bits/stdc++.h>
 const int TIMES = 1000;
-
+const int VERBOSE = 1;
 #define CONV(a,b) (int)(a[b+1])*8+a[b]-489
 const int NUM_TYPES = 5; //numtypes does not include king
 const char EMPTY = '.';
@@ -35,10 +37,15 @@ const int MIN_DEPTH = 1;
 const bool Very_Cautious = false;
 const int KILLER_LEVELS = 1;
 char* killers[100][KILLER_LEVELS];
+
 int killer_count[100]={0};
 
-int max_time = 150000;
-int LIMIT = max_time/20;
+const int NORM = 3;
+
+int max_time = 300000;
+
+int LIMIT = max_time/NORM;
+int TimeTrouble = 100;
 
 int king_end_game[]=
 {-50,-40,-30,-20,-20,-30,-40,-50,
@@ -77,10 +84,14 @@ int rqnodes = 0;
 */
 
 
+
+
+
 using namespace std;
 typedef unsigned long long int LL;
 
-
+string filename = "out.txt";
+ofstream file (filename.c_str());
 //5 jun TODO
 //flag for all_child_gen, etc DONE MAYBE
 //iterative deepening DONE
@@ -121,9 +132,6 @@ typedef unsigned long long int LL;
 
 
 //7. check combos of || and && for possible precedence issues
-//8. testing
-
-//10. remove all couts
 
 //11. 3 rep draw
 //12. rewrite and test check
@@ -256,7 +264,7 @@ class Move{
     Move(Move &z)
     {
         for(int i=0;i<4;i++)uci[i]='0';
-        uci[5]=0;
+        uci[4]=0;
         bits=z.bits;
         eval=z.eval;
         set_game_ended(false);
@@ -273,7 +281,7 @@ class Move{
         for(int i=0;i<5;i++)if(tolower(in[i])!=tolower(uci[i]))return 0;
         return 1;
     }
-    void print(){for(int j=0;j<5;j++){cout<<(char)tolower(uci[j]);} }
+    void print(){for(int j=0;j<5;j++)if(uci[j]){cout<<(char)tolower(uci[j]);file<<(char)tolower(uci[j]);}}
     inline bool turn(){return ((bits>>4)&1);}
     inline void set_turn(bool val){setBit(bits,4,val);}
     inline bool evaluated(){return (bits&1);}
@@ -317,7 +325,7 @@ bool histsort(Move *a,Move *b)
 {
     if(a==pv)return 1;
     if(b==pv)return 0;
-    int ax=(a->uci[5]>='A')||(a->capture>='A'), bx=(b->uci[5]>='A')||(b->capture>='A');
+    int ax=(a->uci[4]>='A')||(a->capture>='A'), bx=(b->uci[4]>='A')||(b->capture>='A');
     if(ax && bx)return 0;
     if(ax)return 1;
     if(bx)return 0;
@@ -328,7 +336,7 @@ bool killsort(Move *a,Move *b)
 {
     if(a==pv)return 1;
     if(b==pv)return 0;
-    int ax=(a->uci[5]>='A')||(a->capture>='A'), bx=(b->uci[5]>='A')||(b->capture>='A');
+    int ax=(a->uci[4]>='A')||(a->capture>='A'), bx=(b->uci[4]>='A')||(b->capture>='A');
     if(ax && bx)return 0;
     if(ax)return 1;
 
@@ -350,8 +358,8 @@ bool killsort(Move *a,Move *b)
     int ax=0,bx=0;
     ax = 1 + ((getValue(a->capture)*100)/100);//implement capturer
     bx = 1 + ((getValue(b->capture)*100)/100);//implement capturer
-    ax+=getValue(a->uci[5]);
-    bx+=getValue(b->uci[5]);
+    ax+=getValue(a->uci[4]);
+    bx+=getValue(b->uci[4]);
     return ax>bx;
 }*/
 
@@ -529,7 +537,6 @@ public:
         en_passant_file = -1;
         int index = 56,i;
         flags = 0;
-        bool color;
         char ch;
         for(i=0;i<NUM_TYPES;i++)pieceType[i] = 0;
         colorPiece[0]=colorPiece[1]=0;
@@ -556,6 +563,9 @@ public:
             }
             else index-=16;
         }
+
+
+
         set_turn(fen[i]=='w');
         i=i+2;
 
@@ -563,8 +573,6 @@ public:
         {
             for(;fen[i]>' ';i++)
             {
-                //cout<<fen[i]<<endl;
-
                 if(fen[i]=='K'){set_right_castle_possible(1,WHITE);}
                 else if(fen[i]=='k')set_right_castle_possible(1,BLACK);
                 else if(fen[i]=='Q')set_left_castle_possible(1,WHITE);
@@ -578,8 +586,10 @@ public:
             en_passant_file = fen[i+1]-'a';
             //i+=4;
         }
+
         //else i+=3;
         ///leaving any more specifications...
+
     }
 
 	Position()//default constructor
@@ -603,12 +613,15 @@ public:
 
 	void print()
 	{
+	    if(VERBOSE)
+        {
 			int i,j;
 			for(i=7;i>=0;i--)
 			{
 				for(j=0;j<8;j++){cout<<' ';cout<<symbol(i,j);}
 				cout<<endl;
 			}
+        }
 	}
 
 	int isCheckv2(bool side, LL &pinned) //side is irrespective of the turn so no turn should be in the code below
@@ -2050,9 +2063,9 @@ public:
 				best_value = max( best_value, result );
 				if(depth==MAX_DEPTH && depth>4){
 				///cout<<"scored "<<result<<endl;
-				cout<<"info score cp "<<result<<" depth "<<depth<<" pv ";
+				if(VERBOSE){cout<<"info score cp "<<result<<" depth "<<depth<<" pv ";
 				move->children[i]->print();
-				cout<<endl;
+				cout<<endl;}
 				}
 
 				if (alpha<result)
@@ -2069,7 +2082,7 @@ public:
 
 				if(beta <= alpha)//cut-off
                     {
-                        if(killer->uci[5]<'A' && killer->capture<'A')
+                        if(killer->uci[4]<'A' && killer->capture<'A')
                         {
                             if(killer_count[depth]<KILLER_LEVELS )
                             {
@@ -2117,8 +2130,6 @@ public:
 
 
 			move->eval = best_value; move->set_evaluated(false);
-			//cout<<"ALPHA max= "<<alpha<<"\n";
-			//cout<<"BETA = "<<beta<<"\n";
 
 
 
@@ -2141,15 +2152,14 @@ public:
                     beta = res;
                 }
 				if(depth==MAX_DEPTH && depth>4){
-				///cout<<"scored "<<res<<endl;
-				cout<<"info score cp "<<res<<" depth "<<depth<<" pv ";
-				move->children[i]->print();
+				if(VERBOSE){cout<<"info score cp "<<res<<" depth "<<depth<<" pv ";
+				move->children[i]->print();}
 				}
 
 				unmakemove(move->children[i]);
 				if(beta <= alpha)//cut-off
                     {
-                        if(killer->uci[5]<'A' && killer->capture<'A')
+                        if(killer->uci[4]<'A' && killer->capture<'A')
                         {
                             if(killer_count[depth]<KILLER_LEVELS )
                             {
@@ -2202,9 +2212,12 @@ public:
 	Move* best_move(Move *move,int d, int &score,int alpha=-DINF, int beta=DINF)
 	{
 		score = alphabeta(move,d, alpha, beta, turn()==WHITE);
-		cout<<"Score = "<<score<<endl;
+		if(VERBOSE)cout<<"Score = "<<score<<endl;
 		for(int i=0;i<move->children.size();i++)if(score == move->children[i]->eval)return move->children[i];
-        if(move->children.size()==0){cout<<"GAME ENDED\n";exit(0);}
+        if(move->children.size()==0)
+            {
+                cout<<"GAME ENDED\n";exit(0);
+            }
 		Move *bm = move->children[0];
         if(turn())
         {
@@ -2264,8 +2277,6 @@ int main()
 
 	string Line,prevLine="Aditya";
     cout.setf (ios::unitbuf);
-    string filename = "out.txt";
-        ofstream file (filename.c_str());
         if (! file) {
         cerr << "can't open output file \"" << filename << "\""
         << endl;
@@ -2283,6 +2294,10 @@ int main()
             cout << "id name Conqueror" << endl;
             cout << "id author Aditya Pande, India" << endl;
             cout << "uciok" << endl;
+            file << "id name Conqueror" << endl;
+            file << "id author Aditya Pande, India" << endl;
+            file << "uciok" << endl;
+
         }
         else if (Line == "isready")
         {
@@ -2294,6 +2309,9 @@ int main()
         {
             ///cout<<"Cleaning up\n";
             if(mv!=NULL)mv->delchild();
+            max_time = 300000;
+            LIMIT = max_time/NORM;
+            TimeTrouble = 100;
         }
 
         else if(Line.substr(0,3)=="pos" && (Line.find(prevLine) != std::string::npos) )///continuing old game
@@ -2330,8 +2348,16 @@ int main()
 
         else if (Line.substr(0,12) == "position fen")
         {
-            char *fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";///const_cast<char *>(Line.substr(13).c_str());
+            char *fen = new char[Line.length()];
+            int ll = Line.length();
+            for(int i=13;i<ll;i++)
+            {
+                fen[i-13]=Line.at(i);
+            }
+            fen[ll-13]=0;
             pos = new Position(fen);
+            delete fen;
+            ///pos->print();
                 mv = new Move(pos->flags,pos->en_passant_file,-1,-1);
                 vector<string> tokens;copy(istream_iterator<string>(iss),istream_iterator<string>(),back_inserter<vector<string> >(tokens));
                 for(int i=0;i<tokens.size();i++)
@@ -2362,7 +2388,11 @@ int main()
                 stringstream(tokens[pos->turn()?2:4]) >> result;
                 if(result > max_time)
                 {max_time = result;
-                LIMIT = max_time/20;
+                LIMIT = max_time/NORM;
+                }
+                if(result < 15000)
+                {
+                    TimeTrouble = 4;
                 }
             }
                     rqnodes=0;
@@ -2374,14 +2404,19 @@ int main()
                     {
                         hash_table.clear();///VERY imp to avoid the iterative deep. bugs
                         int val;
-                        cout<<"k = "<<k<<endl;
+                        if(VERBOSE)cout<<"k = "<<k<<endl;
                         bes = pos->best_move(mv,k,val,alpha,beta);
-                        bes->print();
+                        if(VERBOSE)bes->print();
                         for(int var = 0;var<mv->children.size();var++)if(mv->children[var]!=bes)
                         {
                             mv->children[var]->delchild();
                         }
-                        if(k==MAX_DEPTH && rqnodes<LIMIT)MAX_DEPTH++;
+                        if(!(-HINF<val && val < HINF))
+                        {
+                            MAX_DEPTH = 1;
+                        }
+
+                        else if(k==MAX_DEPTH && rqnodes<LIMIT && MAX_DEPTH<TimeTrouble)MAX_DEPTH++;
                         k++;
                         for(int zx=0;zx<100;zx++)killer_count[zx]=0;
 
@@ -2404,8 +2439,14 @@ int main()
 
 
                     cout<<"bestmove ";
+                    file<<"bestmove ";
                     bes->print();
                     cout<<endl;
+                    file<<endl;
+        }
+        else if (Line.substr (0, 4) == "quit")
+        {
+            exit(0);
         }
         /*else
         {
