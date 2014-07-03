@@ -4,9 +4,17 @@ Conqueror
 A chess engine written in C++. It currently implements hybrid board representation, alphabeta pruning, quiescence search, static evaluation, legal move generator, iterative deepening, MVV/LVA move reordering, makemove, unmakemove and uci move representation standard, tapered evaluation. Elostat gives the current version an ELO of 2100 measured over 50 games.
 The binary released supports UCI and can be used with any UCI supporting GUI. However, I suggest using Arena GUI (get the latest version from http://www.playwitharena.com/) or latest Winboard(http://www.open-aurec.com/wbforum/viewtopic.php?t=51528).
 
+Easy Install:
+=============
+
+1. Goto https://sourceforge.net/projects/conqueror-chess-engine/files/
+2. Download any version you are more comfortable unzipping or the installer that will automate the following steps
+3. Unzip to a suitable location
+4. Start Winboard.exe and enjoy
+5. In case of Installer.exe, just run it from the desktop shortcut
+
 Installation With Arena
 =======================
-
 
 1. Install Arena GUI
 2. Goto engines -> Install new engine
@@ -27,12 +35,3 @@ Installation With Winboard
 6. Goto engine -> Load first engine
 7. Select Conqueror from the list
 8. Enjoy
-
-Easy Install:
-=============
-
-1. Goto https://sourceforge.net/projects/conqueror-chess-engine/files/
-2. Download any version you are more comfortable unzipping or the installer that will automate the following steps
-3. Unzip to a suitable location
-4. Start Winboard.exe and enjoy
-5. In case of Installer.exe, just run it from the desktop shortcut
