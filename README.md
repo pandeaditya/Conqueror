@@ -27,3 +27,11 @@ Installation With Winboard
 6. Goto engine -> Load first engine
 7. Select Conqueror from the list
 8. Enjoy
+
+Easy Install:
+=============
+
+1. Goto https://sourceforge.net/projects/conqueror-chess-engine/files/
+2. Download any version you are more comfortable unzipping
+3. Unzip to a suitable location
+4. Start Winboard.exe and enjoy
