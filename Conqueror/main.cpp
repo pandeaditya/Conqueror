@@ -18,35 +18,52 @@
 @author adityapande
 */
 
-#include<bits/stdc++.h>
+///bug fixed (memory leaks)
+
+///bug fixed main changes uci[5] -> uci[4]....
+
+///bug fixed in Play (all_move() replacing )children.size())
+
+//#include<bits/stdc++.h>
+#include<iostream>
+#include<fstream>
+#include<vector>
+#include<cstdlib>
+#include<algorithm>
+#include<time.h>
+#include<sstream>
+#include<string>
+#include<iterator>
+#include<string.h>
 const int TIMES = 1000;
-///ASP search bug... after repeat
-///USE ct_queit as it was meant to be
-///IN fen if king is not between rooks assumed castled and rooks are out
-//#define WAIT scanf("%*d");
-//#define PAUSE getchar();
-#define WAIT ;
-#define PAUSE ;
-#define FATAL_PAUSE scanf("%*d");
+const int VERBOSE = 10;
 #define CONV(a,b) (int)(a[b+1])*8+a[b]-489
 const int NUM_TYPES = 5; //numtypes does not include king
+
+int WINBOARD=0;
 const char EMPTY = '.';
 const int INF = 1000000;
 const int HINF = 500000;
 const int DINF = 2000000;
 const int QUIET_CUT = 10;
-
+const int KILL_WINDOW = 2;
 const int WINDOW = 33;
-const bool DEBUG_MODE = true; //checks if makemove and unmakemoveunmakemove work well by keeping the position b4 makemove stored
 int MAX_DEPTH = 3;
 const int MIN_DEPTH = 1;
 const bool Very_Cautious = false;
-const int KILLER_LEVELS = 1;
-char* killers[15][KILLER_LEVELS];
-int killer_count[15]={0};
+const int KILLER_LEVELS = 3;
+char killers[100][KILLER_LEVELS][5];
 
+int killer_count[100]={0};
 
-// king end game
+const int NORM = 10;
+
+int max_time = 300000;
+
+int LIMIT = max_time/NORM;
+bool started = 0;
+int TimeTrouble = 100;
+
 int king_end_game[]=
 {-50,-40,-30,-20,-20,-30,-40,-50,
 -30,-20,-10,  0,  0,-10,-20,-30,
@@ -67,34 +84,7 @@ int king_middle_game[]={
  20, 20,  0,  0,  0,  0, 20, 20,
  20, 30, 10,  0,  0, 10, 30, 20};
 
-
-//65 === double check
-int qnodes = 0, rqnodes = 0;
-int tnodes = 0;
-
-//just prioritize killers
-
-
-int predict = 1;//todo comment this line
-///memclear
-
-//ASP SEARCH DONE
-//make checksum a lot more powerful DONE
-
-///MAIN TASK 1 to fix eval function (tapered eval)
-
-///FEN constructor
-
-///check if makemove and unmakemove combo works well by comparing with stored Positions DONE
-
-///BUGS fixed 13th jun :
-/// 1 makemove and unmakemove 2 lines added in castling fixing checksum bug
-/// 2 PROMOTION + 1 replaced by piece_notation(PROMOTION+1) when passed to Move constr. in add() function as former causes seg fault in makemove
-
-///BUGS fixed 15th jun:
-/// a small bug in QS removed
-
-///check the check function
+int rqnodes = 0;
 
 /**
     IMPLEMENTED:
@@ -105,21 +95,18 @@ int predict = 1;//todo comment this line
     static evaluation
     legal move generator
     iterative deepening
-    aspiration search
     MVV/LVA move reordering
     makemove
     unmakemove
+	aspiration search
 */
-
-//new better tapered eval function
-
-//Opening queen mob eval bugs
 
 
 using namespace std;
 typedef unsigned long long int LL;
-int counter = 0;//only for testing
 
+string filename = "out.txt";
+ofstream file (filename.c_str());
 //5 jun TODO
 //flag for all_child_gen, etc DONE MAYBE
 //iterative deepening DONE
@@ -141,8 +128,6 @@ int counter = 0;//only for testing
 
 //TODO test transposition in alphabeta depth = 0 and extend the same to all depths in both searches
 
-//int CTR = 0;//TODO remove after testing
-//int VERBOSE = 0;//TODO remove after testing
 
 //TODO TEST PROMOTION.....
 
@@ -162,16 +147,12 @@ int counter = 0;//only for testing
 
 
 //7. check combos of || and && for possible precedence issues
-//8. testing
-
-//10. remove all couts
 
 //11. 3 rep draw
 //12. rewrite and test check
 
 //HELPER FUNCTIONS
 void erase(vector<int> &c,int v){c.erase(remove(c.begin(),c.end(),v),c.end());}
-
 
 int interceptions[64];
 
@@ -224,36 +205,24 @@ int generated_ct[NUM_TYPES+1][2]={0};
 enum branch_mode {NO_BRANCH, QUIESCENT, ALL_BRANCH};
 
 
-int getValue(char c)
-{
-    for(int i=0;i<=NUM_TYPES;i++)if(piece_notation[i]==c)return VALUE[i];
-    return 0;
-}
 
-int DC = 0;//TODO remove this after testing
-int abc = 0;//TODO remove this after testing
 
 class Position;
 Position *thinking;
 class Move;
 
 struct Bundle{
-	///Position *board;
-	char*muci;
-	bool exact,lower,upper,useful;
+	char best_response[5];
+	bool exact,lower,upper;
 	int depth,Value;
 	LL hash_val;
 };
 
-//map<LL,int> hashtable;
-map<LL,Bundle> hash_table;
-int HC = 0, HCC = 0;
-
+const int HASH_SIZE = ((1<<25))/sizeof(Bundle);
+Bundle *hash_table;
+bool useful[HASH_SIZE];
 
 vector<int> dx[NUM_TYPES+1],dy[NUM_TYPES+1];
-
-//Move gen in PROMOTION
-//pass CAPTURE to add
 
 class Move{
     public:
@@ -268,24 +237,25 @@ class Move{
     bool get_last_en(){return getBit(bits,12);}
 
 
-    void delchild()
+    void delchildren()
     {
-        for(int i=0;i<children.size();i++){children[i]->delchild();delete children[i];}
+        for(int i=0;i<children.size();i++){children[i]->delchildren();
+        //delete children[i];
+        }
         children.clear();//faster
         //children.shrink_to_fit();
         //children.swap(vector<Move*>());
-        std::vector<Move*>(children).swap(children);
+        ///std::vector<Move*>(children).swap(children);
         //std::vector<Move*> tmp(children);    // copy elements into a temporary vector
         //children.swap(tmp);
         setBit(bits,11,0);
     }
-    inline void set_all_move(bool val){setBit(bits,11,val);}
-    inline bool all_move(){return getBit(bits,11);}
     inline void set_evaluated(bool val){setBit(bits,0,val);}
-    inline void verdict(int value){eval=value;set_evaluated(true);set_game_ended(true);delchild();}
-    Move(int flags,int enpass,int start,int end,int reorder = 0, char promotion=0,bool en_pass_played=0)
+    inline void verdict(int value){eval=value;set_evaluated(true);set_game_ended(true);}
+    Move(){}
+    //Move(int flags,int enpass,int start,int end,int reorder = 0, char promotion=0,bool en_pass_played=0)
+    void adjMove(int flags,int enpass,int start,int end,int reorder = 0, char promotion=0,bool en_pass_played=0)
     {
-        counter++;
         if(start==end){uci[0]=uci[1]=uci[2]=uci[3]='0';uci[4]=0;}
         else{
             uci[0]=(start&7)+'a';
@@ -301,33 +271,46 @@ class Move{
         capture = CAPTURE;
         set_evaluated(false);
         set_last_en(en_pass_played);
-        set_all_move(false);
+        parent = NULL;
     }
     Move(Move &z)
     {
-        counter++;
         for(int i=0;i<4;i++)uci[i]='0';
-        uci[5]=0;
+        uci[4]=0;
         bits=z.bits;
         eval=z.eval;
         set_game_ended(false);
         enpassfile = -1;
         capture = z.capture;
         set_evaluated(false);
-        set_all_move(false);
         set_last_en(0);
         setBit(bits,4,!((z.bits>>4)&1));
         parent=&z;
     }
     bool equal(char *in)
     {
-        for(int i=0;i<5;i++)if(in[i]!=uci[i])return 0;
+        for(int i=0;i<5;i++)if(tolower(in[i])!=tolower(uci[i]))return 0;
         return 1;
     }
-    void print(){for(int j=0;j<5;j++){putchar(uci[j]);}printf("\t%d %c\n",eval,capture);}
-    void print_all_child()
+    void print(){}
+    void prints(){for(int j=0;j<5;j++)if(uci[j]){cout<<(char)tolower(uci[j]);file<<(char)tolower(uci[j]);
+    }}
+    void prints_children()
     {
-        for(int i=0;i<children.size();i++){printf("%d\t",i);children[i]->print();}
+        for(int i=0;i<children.size();i++)
+        {
+            for(int j=0;j<5;j++)if(children[i]->uci[j])file<<(char)tolower(children[i]->uci[j]);
+            file<<' ';
+        }
+        file<<endl;
+		for(int i=0;i<children.size();i++)
+        {
+			cout<<children[i]<<':';
+			for(int j=0;j<5;j++){if(children[i]->uci[j])cout<<(char)tolower(children[i]->uci[j]);}
+			cout<<' ' <<children[i]->eval;
+            cout<<'\n';
+        }
+        cout<<endl;
     }
     inline bool turn(){return ((bits>>4)&1);}
     inline void set_turn(bool val){setBit(bits,4,val);}
@@ -354,7 +337,7 @@ bool hist_turn;
 int kill_helper;
 
 Move *pv,*root;
-
+char *pv_uci;
 
 int dist(Move *mv)
 {
@@ -365,28 +348,25 @@ int dist(Move *mv)
         d++;
     }
     if(mv!=root)d=25;
-    ///printf("root turn is %d\n",root->turn());
-    ///if(root->turn())
         return d;
-    ///else return -d;
 }
 
 bool histsort(Move *a,Move *b)
 {
     if(a==pv)return 1;
     if(b==pv)return 0;
-    int ax=(a->uci[5]>='A')||(a->capture>='A'), bx=(b->uci[5]>='A')||(b->capture>='A');
+    int ax=(a->uci[4]>='A')||(a->capture>='A'), bx=(b->uci[4]>='A')||(b->capture>='A');
     if(ax && bx)return 0;
     if(ax)return 1;
     if(bx)return 0;
-    return history[hist_turn][CONV(a->uci,0)][CONV(a->uci,2)]>history[hist_turn][CONV(a->uci,0)][CONV(b->uci,2)];
+    return history[hist_turn][CONV(a->uci,0)][CONV(a->uci,2)]>history[hist_turn][CONV(b->uci,0)][CONV(b->uci,2)];
 }
 
 bool killsort(Move *a,Move *b)
 {
     if(a==pv)return 1;
     if(b==pv)return 0;
-    int ax=(a->uci[5]>='A')||(a->capture>='A'), bx=(b->uci[5]>='A')||(b->capture>='A');
+    int ax=(a->uci[4]>='A')||(a->capture>='A'), bx=(b->uci[4]>='A')||(b->capture>='A');
     if(ax && bx)return 0;
     if(ax)return 1;
 
@@ -400,6 +380,11 @@ bool killsort(Move *a,Move *b)
     return ax>bx;
 }
 
+bool pvsort(Move *a,Move *b)
+{
+	return a->equal(pv_uci) > b->equal(pv_uci);
+}
+
 
 
 /*bool capsort(Move *a,Move *b)
@@ -408,8 +393,8 @@ bool killsort(Move *a,Move *b)
     int ax=0,bx=0;
     ax = 1 + ((getValue(a->capture)*100)/100);//implement capturer
     bx = 1 + ((getValue(b->capture)*100)/100);//implement capturer
-    ax+=getValue(a->uci[5]);
-    bx+=getValue(b->uci[5]);
+    ax+=getValue(a->uci[4]);
+    bx+=getValue(b->uci[4]);
     return ax>bx;
 }*/
 
@@ -430,7 +415,6 @@ public:
 	//int eval;//make it private after testing
 	//Position *first_child;
 	//Position *next_peer;//public only for testing purposes (TODO: make these ptrs private after the testing)
-	static int get_object_count(){return object_count;}
 	//functions
 	//=======================
 	//960 constructor
@@ -580,42 +564,20 @@ public:
 		}
 
 	}
-	bool equivalent(Position &z)
-	{
-		if(this==NULL)return false;
-		if(this == &z)return true;
-		if(((flags>>2) - (z.flags>>2) )%512){printf("%d %d\n",flags,z.flags);puts("123456789 1");scanf("%*d");
-		return false;}
-		if(en_passant_file != z.en_passant_file){printf("123456789 2 %d %d\n",en_passant_file,z.en_passant_file);scanf("%*d");return false;}
-		if(colorPiece[WHITE] != z.colorPiece[WHITE]){cout<<colorPiece[WHITE]<<' '<< z.colorPiece[WHITE]<<endl;puts("123456789 3");scanf("%*d");
-		return false;}
-		if(colorPiece[BLACK] != z.colorPiece[BLACK]){puts("123456789 4");scanf("%*d");
-		return false;}
-		for(int i=0;i<NUM_TYPES;i++)if(pieceType[i] != z.pieceType[i]){puts("123456789 5");scanf("%*d");
-		return false;}
-		for(int i=0;i<2;i++)if(pieces[KING][i] != z.pieces[KING][i]){puts("123456789 6");scanf("%*d");
-		return false;}
-
-		return true;
-	}
 
     void init(char *fen)
     {
-        //scanf("%*d");
         reorder = 0;
         en_passant_file = -1;
         int index = 56,i;
         flags = 0;
-        bool color;
         char ch;
         for(i=0;i<NUM_TYPES;i++)pieceType[i] = 0;
         colorPiece[0]=colorPiece[1]=0;
         for(i=0;fen[i]&&(index>=0);i++)
         {
-            //putchar(fen[i]);
             if(fen[i]>'9')
             {
-                //putchar(fen[i]);
                 ch = fen[i];
                 bool color = ch<'a';
                 if(ch>='a') ch-=32;
@@ -624,9 +586,6 @@ public:
                 {
                 if(piece_notation[j]==ch){
                     if(j<NUM_TYPES)setBit(pieceType[j],index,true);
-                    //cout<<piece_notation[j]<<color<<' ';
-                    //puts("ting tong");
-                    //scanf("%*d");
                     pieces[j][color].push_back(index);
                     break;
                     }
@@ -638,6 +597,9 @@ public:
             }
             else index-=16;
         }
+
+
+
         set_turn(fen[i]=='w');
         i=i+2;
 
@@ -645,8 +607,6 @@ public:
         {
             for(;fen[i]>' ';i++)
             {
-                //cout<<fen[i]<<endl;
-
                 if(fen[i]=='K'){set_right_castle_possible(1,WHITE);}
                 else if(fen[i]=='k')set_right_castle_possible(1,BLACK);
                 else if(fen[i]=='Q')set_left_castle_possible(1,WHITE);
@@ -660,8 +620,10 @@ public:
             en_passant_file = fen[i+1]-'a';
             //i+=4;
         }
+
         //else i+=3;
         ///leaving any more specifications...
+
     }
 
 	Position()//default constructor
@@ -685,56 +647,24 @@ public:
 
 	void print()
 	{
-		//BOARD BASED
-		printf("TURN = %s\n",turn()?"WHITE":"BLACK");
-		puts("Board based");
-		{
+	    if(VERBOSE)
+        {
 			int i,j;
 			for(i=7;i>=0;i--)
 			{
-				for(j=0;j<8;j++){putchar(' ');putchar(symbol(i,j));}
-				puts("");
+				for(j=0;j<8;j++){cout<<' ';cout<<symbol(i,j);}
+				cout<<endl;
 			}
-		}
-		puts("Piece based");
-		{
-			int piece_count = 2; //the kings
-			//PIECE BASED (just for testing)
-			int i,j,k;
-			char board[64];
-			for(i=0;i<64;i++)
-			{
-				board[i]=EMPTY;
-			}
-			board[pieces[KING][WHITE][0]] = piece_notation[KING];
-			board[pieces[KING][BLACK][0]] = piece_notation[KING] + 32;
-
-
-
-
-			for(k=0;k<NUM_TYPES;k++)
-			{
-				for(j=0;j<pieces[k][WHITE].size();j++)board[pieces[k][WHITE][j]] = piece_notation[k];
-				for(j=0;j<pieces[k][BLACK].size();j++)board[pieces[k][BLACK][j]] = piece_notation[k]+32;
-				piece_count += pieces[k][WHITE].size() + pieces[k][BLACK].size();
-
-			}
-
-
+        }
+	}
+	void prints(ostream *f = &file)
+	{
+	    	int i,j;
 			for(i=7;i>=0;i--)
 			{
-				for(j=0;j<8;j++)printf(" %c",board[i*8+j]);
-				puts("");
+				for(j=0;j<8;j++){*f<<' ';*f<<symbol(i,j);}
+				*f<<endl;
 			}
-			printf("%d pieces on board\n",piece_count);
-		}
-
-		printf("CR = %d\n",right_castle_possible(turn()));
-		printf("CL = %d\n",left_castle_possible(turn()));
-		printf("opp CR = %d\n",right_castle_possible(!turn()));
-		printf("opp CL = %d\n",left_castle_possible(!turn()));
-
-
 	}
 
 	int isCheckv2(bool side, LL &pinned) //side is irrespective of the turn so no turn should be in the code below
@@ -935,10 +865,6 @@ public:
                             if( getBit(diag_sliders, i) )///imp
                             {
                                 setBit(pinned,pinnable,true);
-                                //print();
-                                //printf("....pinned = %d\n",pinnable);
-
-                                //getchar();
                             }
                             else if( getBit(all_pieces, i) )
                             {
@@ -1204,18 +1130,12 @@ public:
 	//fen etc
 	//char [64]
 
-	void add(int &generated, int &ct_quiet, Position * &prev_child, int pos, int npos, Move* parent, int MODE, int en_pass, bool checkable,int epp)//helper for a redundant task of adding children in move_gen()
+	void add(Move *arr, int &generated, int &ct_quiet, Position * &prev_child, int pos, int npos, Move* parent, int MODE, int en_pass, bool checkable,int epp)//helper for a redundant task of adding children in move_gen()
 	{
 		//Make Move *now here itself
 		//fun(generated&, prev_child )
 		if(!checkable || !(*thinking).isCheck(turn()))
 		{
-		    if(predict == 0 && DEBUG_MODE)
-            {
-                print();
-                printf("pos = %c%d, npos = %c%d\n",(pos&7)+'a',(pos>>3)+1,(npos&7)+'a',(npos>>3)+1);
-                FATAL_PAUSE;
-            }
 			if(MODE==NO_BRANCH){ generated++; generated_ct[identify(pos)][turn()]++; (*thinking).copy_from(*this); return;}
 
 			///if(flag_opponent_check)thinking->reorder += 150;///modified
@@ -1242,15 +1162,22 @@ public:
 
 				if(PROMOTION)
 				{
-					while(PROMOTION--){Move *now=new Move(thinking->flags,thinking->en_passant_file,pos,npos,thinking->reorder,piece_notation[PROMOTION+1]);now->delchild();parent->children.push_back(now);
-					now->parent = parent;generated++; generated_ct[identify(pos)][turn()]++;now->set_game_ended(false);}
+					while(PROMOTION--){
+                    Move *now = &arr[generated];
+                    now->adjMove(thinking->flags,thinking->en_passant_file,pos,npos,thinking->reorder,piece_notation[PROMOTION+1]);
+                    now->children.clear();
+                    parent->children.push_back(now);
+					now->parent = parent;generated++;
+					generated_ct[identify(pos)][turn()]++;now->set_game_ended(false);}
 					(*thinking).copy_from(*this);
 				}
 				else{
-					Move *now=new Move(thinking->flags,thinking->en_passant_file,pos,npos,thinking->reorder,0,epp);
-					now->delchild();now->parent = parent;
+                    Move *now = &arr[generated];
+					now->adjMove(thinking->flags,thinking->en_passant_file,pos,npos,thinking->reorder,0,epp);
+					now->children.clear();now->parent = parent;
 					parent->children.push_back(now);
-					generated++;generated_ct[identify(pos)][turn()]++;
+					generated++;
+					generated_ct[identify(pos)][turn()]++;
 					thinking->unmakemove(now);
 					///thinking->copy_from(*this);
 					reorder = 0;
@@ -1263,28 +1190,18 @@ public:
 		}
 		else {(*thinking).copy_from(*this);reorder=0;}
 	}
-	int move_gen(Move *parent, int MODE = ALL_BRANCH)
+	int move_gen(Move *parent, Move *arr,int MODE = ALL_BRANCH)
 	{
-		if(MODE==ALL_BRANCH && parent->all_move()){return parent->children.size();}
-		parent->delchild();
+		///if(MODE==ALL_BRANCH && parent->all_move()){return parent->children.size();}
+		parent->children.clear();
 		bool qm = MODE==QUIESCENT;
 		LL pinned;
 		int check = isCheckv2(turn(),pinned);
-		if(DEBUG_MODE)
-		if((!!check) != isCheck(turn())){
-		    print();
-		    printf("check=%d\n",check);
-		    printf("isCheck=%d\n",isCheck(turn()));
 
-            puts("WHatttttttttttttt..........");
-            FATAL_PAUSE;
-		}
 		if(qm && check)
 		{
 			MODE = ALL_BRANCH;
 		}
-		if(MODE == ALL_BRANCH)parent->set_all_move(true);
-		else parent->set_all_move(false);
 
 		if(parent->game_ended())return 0;
 
@@ -1293,7 +1210,6 @@ public:
 
             for(int zx=0;zx<64;zx++)interceptions[zx]=0;
             //memset(interceptions,0,64);
-            int cm = check-1;
             int delta = 1, diff = check-1-pieces[KING][turn()][0];
             for(int zx=9;zx>6;zx--)
             {
@@ -1325,11 +1241,7 @@ public:
 					((pos <=15 && turn()==WHITE)|| (pos >=48 && turn()==BLACK))
 					&& !getBit(colorPiece[WHITE] | colorPiece[BLACK],pos+dPos) };
 				thinking->reorder = 0;
-				if(DEBUG_MODE)if(thinking->equivalent(*this)==0)
-                    {
-                        printf("copy error 1");
-                        FATAL_PAUSE;
-                    }
+
 
 				if(condition[moveBy] && !getBit(colorPiece[WHITE],npos) && !getBit(colorPiece[BLACK],npos))
 				{
@@ -1350,21 +1262,7 @@ public:
 					else PROMOTION = 0;
 					//(*thinking).print();//for testing
 					CAPTURE = EMPTY;
-					predict = true;
-					add(generated,ct_quiet,prev_child,pos, npos, parent, MODE,(moveBy==2)*((pos&7)+1) ,checkable,0 );
-
-                    if(DEBUG_MODE)if(thinking->equivalent(*this)==0)
-                    {
-
-                        printf("copy error 2\n");
-                        printf("%d %d %d\n",en_passant_file,thinking->en_passant_file,parent->enpassfile);
-                        parent->print();
-                        parent->parent->print();
-                        FATAL_PAUSE;
-                        print();
-                        thinking->print();
-                        FATAL_PAUSE;
-                    }
+					add(arr,generated,ct_quiet,prev_child,pos, npos, parent, MODE,(moveBy==2)*((pos&7)+1) ,checkable,0 );
 				}
 			}
 
@@ -1411,8 +1309,7 @@ public:
 							erase(thinking->pieces[PAWN][!turn()],pos+ddx[dxc]);
 							//(*thinking).print();//for testing
 							CAPTURE = 'P';
-							predict = true;
-							add(generated,ct_quiet,prev_child, pos,npos,parent, MODE,(moveBy==2)*((pos&7)+1), checkable,1 );
+							add(arr,generated,ct_quiet,prev_child, pos,npos,parent, MODE,(moveBy==2)*((pos&7)+1), checkable,1 );
 						}
 					}
 
@@ -1444,20 +1341,12 @@ public:
                                 continue;
                                 }
 
-                                predict = true;
+                                if(getBit(colorPiece[!turn()],npos))maxMove=0;
+
                                 if(check && picked_piece!=KING )if(!interceptions[npos] && !NULL_MOVE)
                                 {
-                                /*print();*/
-                                //printf("check from %c%d\n",((check-1)&7)+'a',((check-1)>>3)+1);
-                                //printf("pos = %c%d, npos = %c%d\n",(pos&7)+'a',(pos>>3)+1,(npos&7)+'a',(npos>>3)+1);
-                                //printf("piece = %c\n",piece_notation[picked_piece]);
-                                /*getchar();*/
-                                //cout<<piece_notation[picked_piece]<<endl;
-
-                                predict = false;
 
                                 if(!Very_Cautious)continue; ///MAYBE BUGGY
-                                //continue;
                                 }
 
                                 bool checkable = !(check==0 && !getBit(pinned,pos) && picked_piece != KING);
@@ -1469,21 +1358,8 @@ public:
 									maxMove=0;//will make this iteration the last iteration in this direction
 									if(NULL_MOVE == false)if(npos==pieces[KING][!turn()][0])
 									{
-										//TODO uncomment below and test
-										//puts("\n\n\nInvalid position.King under attack.FATAL ERROR");
-
-										//TODO avoid memory leaks...
 										parent->verdict((turn()==WHITE)?INF:-INF);
 										return 0;
-										/*thinking->print();
-										this->print();
-										this->parent->print();*/
-										//WAIT;exit(-1);
-										/*thinking -> game_ended = true;
-										thinking -> evaluated = true;
-										thinking -> eval = (turn==WHITE)?INF:-INF;
-
-										*/
 
 									}
 									for(int it = 0; it<NUM_TYPES;it++)
@@ -1500,15 +1376,10 @@ public:
 									setBit(thinking->pieceType[picked_piece],npos,true);
 									setBit(thinking->pieceType[picked_piece],pos,false);
 								}
-								//printf("\n\n\n\n\n\n\n\n\n\n");
-								//thinking->print();
-								//cout<<"CHECK = "<<(*thinking).isCheck(turn)<<"\n";
-								//cout<<"OPP CHECK = "<<(*thinking).isCheck(!turn)<<"\n";
-								//WAIT;
 								if(picked_piece==PAWN && (npos<8 || npos>=56)){PROMOTION = 4;promotion_pos=npos;}
 								else PROMOTION = 0;
-								add(generated, ct_quiet, prev_child, pos, npos, parent, MODE, 0 , checkable,0);
-								//printf("%d\n",this->object_count-2);
+								add(arr,generated, ct_quiet, prev_child, pos, npos, parent, MODE, 0 , checkable,0);
+
 							}
 							else{break;}
 						}
@@ -1520,23 +1391,12 @@ public:
 						int adds = (turn()==BLACK)?56:0;
 						bool left=left_castle_possible(turn()) && !getBit(isEmpty, 1+adds) && !getBit(isEmpty, 2+adds) && !getBit(isEmpty, 3+adds),
 							right=right_castle_possible(turn()) && !getBit(isEmpty, 5+adds) && !getBit(isEmpty, 6+adds);
-						//printf("CR = %d\n",right);
-						//right = !getBit(isEmpty, 5+adds) && !getBit(isEmpty, 6+adds);
-
-						//error in consistent management of castling bools
-
-						/*if(right||left){
-						puts("CASTLING");
-						WAIT;
-
-						}*/
 						if(left||right)
 						{
-
-							bool arr[2]={left,right};int diff[2]={-1,1};
+							bool barr[2]={left,right};int diff[2]={-1,1};
 							bool valid_move = false;
 							for(int iter = 0;iter<2;iter++)
-								if(arr[iter]){
+								if(barr[iter]){
 									setBit(thinking->colorPiece[turn()],4+adds+diff[iter],true);
 									setBit(thinking->colorPiece[turn()],4+adds,false);
 									thinking->pieces[KING][turn()][0]+=diff[iter];
@@ -1564,14 +1424,8 @@ public:
 												thinking->pieces[ROOK][turn()][h]=npos;
 												break;
 											}
-											PROMOTION = 0;
-											//puts("CASTLING");
-											//printf("%d %d\n",pos,npos);
-											//WAIT;
-											//thinking->print();
-
-                                            predict = true;
-											add(generated, ct_quiet, prev_child, 4+adds, 4+adds+2*diff[iter],parent,MODE, 0 ,true,0 );
+											PROMOTION = 0;;
+											add(arr,generated, ct_quiet, prev_child, 4+adds, 4+adds+2*diff[iter],parent,MODE, 0 ,true,0 );
 										}
 
 									}
@@ -1589,11 +1443,7 @@ public:
 					{
 						if(generated == 0 && MODE != QUIESCENT)//either stalemate or checkmate
 						{
-						    ///print();
-						    ///puts("GAME ENDED");
-						    ///printf("verdict = %d\n",(check?(turn()==WHITE?-INF:INF):0));
-							parent->verdict(check?(turn()==WHITE?-INF:INF):0);
-							///FATAL_PAUSE;
+						    parent->verdict(check?(turn()==WHITE?-INF:INF):0);
 							return 0;
 						}
 						if(! ( pieceType[PAWN] ||  pieceType[ROOK] || pieceType[QUEEN]))//insufficient mating material
@@ -1605,18 +1455,6 @@ public:
 						}
 					}
 
-					/*if(MODE == QUIESCENT && children.size())
-					{
-					thinking->copy_from(*this);
-					thinking->reorder = 100;
-					children.push_back(thinking);
-					thinking = new Position(*this);
-					}*/
-					/*if(qm && parent->children.size())
-					{
-					Move nm(flags,en_passant_file,0,0,120);
-					nm.set_turn(!turn());
-					}*/
 
 					//REORDER
 					stable_sort(parent->children.begin(),parent->children.end(),compare);
@@ -1658,7 +1496,7 @@ public:
 
 
 
-		///if(move->equal("a2a3")){printf("playing a2a3\n");print();FATAL_PAUSE;}
+
 
 
 		int pos=(move->uci[1]-'1')*8+(move->uci[0]-'a'),npos=(move->uci[3]-'1')*8+(move->uci[2]-'a');
@@ -1669,20 +1507,9 @@ public:
 		//castle
 
 
-		/**if(move->equal("e8c8") || move->equal("e1g1")|| move->equal("e8d8") ){
-            puts("EE8CC8");move->print();
-            printf("Turn=%d\n",turn);getchar();
-		}*/
 
 		if( abs((pos&7)-(npos&7))>1 && pos==pieces[KING][turn][0])
 		{
-			//print();
-			//move->print();
-			//printf("Pos king = %d %d\n",pos,npos&7);
-			//getchar();
-			//Next big bug :p
-
-			///puts("here");move->print();move->parent->print();getchar();
 
 			pieces[KING][turn][0]=npos;
 			int rpos = pos+(npos>pos?3:-4), rnpos = pos+(npos>pos?1:-1);
@@ -1695,11 +1522,6 @@ public:
 			setBit(colorPiece[turn],pos,false);
 			setBit(colorPiece[turn],npos,true);
 
-			//print();
-			//move->print();
-			//printf("Pos king = %d %d\n",pos,npos&7);
-			//getchar();
-			//Next big bug :p
 
 			return;
 		}
@@ -1724,10 +1546,6 @@ public:
 		///bool en_pass = (npos&7)==ef && getBit(pieceType[PAWN],pos) && (npos>>3)==((turn==WHITE)?4:3);
 		bool en_pass = move->get_last_en();
 		int cpos = en_pass?((pos>>3)*8+(npos&7)):npos;
-		///if(move->equal("e4f3")){
-           ///printf("cpos = %d en_pass=%d ctype=%d turn=%d",cpos,move->get_last_en(),ctype,turn);
-            ///FATAL_PAUSE;
-		///}
 		setBit(colorPiece[!turn],cpos,false);
 		if(ctype!=mp || cpos!=npos)
         setBit(pieceType[ctype],cpos,false);//MAY CAUSE EXIT IF ctype == king BUT IT SHOULD NOT HAPPEN
@@ -1746,7 +1564,7 @@ public:
 			setBit(pieceType[PAWN],npos,false);
 			setBit(pieceType[ptype],npos,true);
 		}
-		///if(move->equal("e4f3")){print();printf("playing e4f3\n");FATAL_PAUSE;}
+
 	}
 	void unmakemove(Move *move)
 	{
@@ -1811,25 +1629,29 @@ public:
 		}
 	}
 
-	void Play(Move *&move,char *play, bool verbose = 0)
+	void Play(Move *&move,char *play)
 	{
 		if(play[0]=='U' && move->parent!=NULL){unmakemove(move);move=move->parent;return;}
-		if(!move->children.size())move_gen(move);
+		Move *arr=new Move[218]();
+        move_gen(move,arr);
+		Move *backs = NULL;
 		bool match=false;
 		int i;
-		for(i=0;i<move->children.size();i++)if(move->children[i]->equal(play)){match=true;break;}
-		if(i<move->children.size()){
-			if(verbose){
-				move->print_all_child();
-				printf("%d\n",move->right_castle_possible(turn()));}
-			move = move->children[i];
+		for(i=0;i<move->children.size();i++)
+        {
+            if(move->children[i]->equal(play)){match=true;backs=move->children[i];
+            if(i)swap(move->children[i],move->children[0]);
+            break;
+            }
+        }
+		if(match){
+			move = backs;
 			makemove(move);
 		}
-		else if(verbose){
-			//puts("HERE");
-			move->print_all_child();
-			printf("%d\n",move->right_castle_possible(turn()));
-		}
+        for(i=match;i<move->children.size();i++)
+            {
+               delete move->children[i];
+            }
 	}
 
 	bool open_file(LL bv, int file)
@@ -1866,35 +1688,16 @@ public:
 
 	int evaluate(Move *move)//white - black
 	{
-		//if(VERBOSE)puts("evaluate() called");
-		/**if(move->evaluated())
-        {
-            ///print();
-            ///printf("already evaluated at %d\n",move->eval);
-            ///FATAL_PAUSE;
-            return move->eval;
-        }*/
 
         NULL_MOVE=0;
 		//TODO uncomment above lines after testing
+		for(int i=0;i<=NUM_TYPES;i++)for(int j=0;j<2;j++)generated_ct[i][j]=0;
 
-		 for(int i=0;i<=NUM_TYPES;i++)for(int j=0;j<2;j++)generated_ct[i][j]=0;
-
-		int mobility = move_gen(move,NO_BRANCH);
-
-		///print();
-		///printf("Turn Mob =%d, turn =%s\n",mobility,turn()==WHITE?"WHITE":"BLACK");
-		///FATAL_PAUSE;
-
+		///int mobility =
+		move_gen(move,NULL,NO_BRANCH);
 
 		if(move->evaluated() || move->game_ended())
-        {
-
-           ///print();
-            ///printf("now evaluated to %d\n",move->eval);
-            ///puts("GAME ENDED");
-            ///FATAL_PAUSE;
-            move->set_evaluated(1);
+        { move->set_evaluated(1);
             return move->eval;
         }
 
@@ -1911,20 +1714,10 @@ public:
 		//now subtract opponent mobility
 		set_turn(!turn());
 		NULL_MOVE = true;
-		mobility -= move_gen(move,NO_BRANCH);
-
-		//TODO uncomment above line
-		//printf("net mob = %d\n",mobility);
+		///mobility -=
+		move_gen(move,NULL,NO_BRANCH);
 		set_turn(!turn());
 		NULL_MOVE = false;
-
-		///move->eval += mobility*MOB_VAL;
-
-
-
-		///print();
-		///printf("mobility score = %d\n",mobility*MOB_VAL);
-		///FATAL_PAUSE;
 
 		//doubled and isolated pawn penalty
 		move->eval+=eval_weak_pawns(turn())-eval_weak_pawns(!turn());
@@ -2009,7 +1802,7 @@ public:
         for(int sd=0;sd<2;sd++)
 		for(int i=0;i<pieces[QUEEN][nm[sd]].size();i++)for(int j=0;j<pieces[ROOK][nm[sd]].size();j++)
         {
-            if(same_line(pieces[QUEEN][nm[sd]][i],pieces[BISHOP][nm[sd]][j]))move->eval+=3*(nm[sd]==turn()?1:-1);
+            if(same_line(pieces[QUEEN][nm[sd]][i],pieces[ROOK][nm[sd]][j]))move->eval+=3*(nm[sd]==turn()?1:-1);
         }
 
 		//rook batteries
@@ -2055,100 +1848,54 @@ public:
 
 		///move->eval-=15*(getBit(flags,5)-getBit(flags,4));
 		move->set_evaluated(true);
-		//		if(VERBOSE)printf("Eval = %d\n.Return\n",eval);
-
-		/*if(abs(eval)==95){puts("FOUND");
-		print();
-		PAUSE;
-		}*/
-
-		//printf("%d\n",eval);
-		/*if(eval==INF || eval == -INF){
-		print();
-		puts("Mate!!!!!!!!!!!!!!!!!!");
-		WAIT;
-		}*/
-		///print();
-		///printf("evaluates to %d\n",move->eval);
-		///FATAL_PAUSE;
 		return move->eval;
 	}
 
 	int Quiescence(Move *move,bool side, int alpha, int beta, int depth = QUIET_CUT)
 	{
-		//VERBOSE = 1;
-		qnodes++;
 		rqnodes++;
-		tnodes++;
 		int standingPat = evaluate(move) * ((side)?1:-1);
-		//printf("-------------------------------------\nQS max=%d alpha = %d, beta =%d |standingPat| = %d\n",side,alpha,beta, standingPat* ((side)?1:-1));
-		//print();
-		//PAUSE;
-
-
-		//correction for bad QS in double attack case
-		//TODO uncomment after crash bug is found
-		/*if(depth==QUIET_CUT && !isCheck(!turn()) && !isCheck(turn()))
-		{
-		move->set_turn(!move->turn());
-		set_turn(!turn());
-		int nullPat = -Quiescence(move,!side, -beta, -alpha,(depth/4)*2);
-		move->set_turn(!move->turn());
-		set_turn(!turn());
-		standingPat = min(standingPat,nullPat);
-		}*/
 
 		if(standingPat > HINF || standingPat < -HINF)
         {
-            ///print();
-            ///cout<<"sP = "<<standingPat<<endl;
-            ///cout<<"aScore = "<<( (INF-dist(move))*(standingPat>0?1:-1) )<<endl;
-            ///FATAL_PAUSE;
             move->eval = (INF-dist(move))*(standingPat>0?1:-1);
             return move->eval;
         }
 
-
-
-		if(depth <= 0){//printf("QS 1 returning %d\n",standingPat);
+		if(depth <= 0){
 			return standingPat;}
 
-
-
-
-		if(move->game_ended()){//printf("QS 2 returning %d\n",move->eval * ((side)?1:-1));
+		if(move->game_ended()){
 			return move->eval * ((side)?1:-1);}
 
 		if (standingPat >= beta)
 		{
-			//printf("QS 3 returning %d\n",beta);
+
 			return beta;
 		}
 		if (alpha < standingPat)
 		{
 			alpha = standingPat;
 		}
-		move_gen(move,QUIESCENT);
+
+        Move arr[218];
+		move_gen(move,arr,QUIESCENT);
 
 
-		if(move->children.size()==0){//printf("QS 5 returning standing %d\n",standingPat);
+		if(move->children.size()==0){
 			return standingPat;}
 
-		int score;
+
 		for(int i=0;i<move->children.size();i++)
 		{
 			makemove(move->children[i]);
-			if(DEBUG_MODE)if(checksum(move->children[i])){print();move->children[i]->print();move->print();printf("CS=%d\n",checksum(move->children[i]));
-				printf("depth=%d\n",depth);puts("MM QS");FATAL_PAUSE;
-				}
-			score = -Quiescence(move->children[i],!side, -beta, -alpha,depth - 1);
+
+			int score = -Quiescence(move->children[i],!side, -beta, -alpha,depth - 1);
 			unmakemove(move->children[i]);
-			if(DEBUG_MODE)if(checksum(move->children[i])){print();move->children[i]->print();move->print();printf("CS=%d\n",checksum(move->children[i]));
-				printf("depth=%d\n",depth);puts("UM QS");FATAL_PAUSE;
-				}
+
 			if (score >= beta)
 			{
-				//printf("QS 6 returning %d\n",beta);
+
 				return beta;
 			}
 			if (score > alpha)
@@ -2157,8 +1904,8 @@ public:
 			}
 
 		}
-		//printf("Standpat = %d\n",standingPat);
-		//printf("QS 7 returning %d\n",alpha);
+
+
 		return alpha;
 	}
 
@@ -2166,59 +1913,39 @@ public:
 
 	int alphabeta(Move *move,int depth, int alpha, int beta, bool maximizingPlayer)//modified for exact position evaluation
 	{
-	    tnodes++;
 		if(move->game_ended()){
-                ///printf("move->eval = %d\n",move->eval);
-                ///print();
-                ///int evalto = evaluate(move);
-                ///printf("evalto = %d,move->eval = %d\n",evalto,move->eval);
-                ///FATAL_PAUSE;
-                ///return evalto;
                 return move->eval;
         }
 
 
-
-		/**if(depth)if(move->equal("f6f2"))
-            {
-                printf("yaayyyyyyyyy f6f2 at depth=%d\n",depth);
-                FATAL_PAUSE;
-            }*/
-
+		pv_uci = NULL;
 		LL hash_val = hash();
         Bundle *ttEntry = NULL;
-        if ( hash_table.find(hash_val) == hash_table.end() ) {
-                HCC++;
-              // not found
-              ttEntry = new Bundle;
-              ttEntry->muci = NULL;
+        if ( !useful[hash_val%HASH_SIZE] || hash_table[hash_val%HASH_SIZE].depth<depth)// <= can also be tried
+            {
+              ttEntry = &hash_table[hash_val%HASH_SIZE];
               ttEntry->Value;
               ttEntry->depth = 0;
-              ttEntry->useful = 0;
               ttEntry->exact = 0;
               ttEntry->lower = 0;
               ttEntry->upper = 0;
+
+			  if(!useful[hash_val%HASH_SIZE])
+				  if(ttEntry->hash_val!=hash_val)ttEntry->best_response[0]=0;
+			  pv_uci = ttEntry->best_response;
               ttEntry->hash_val=hash_val;
               ///bdl->board=new Position(*this);
-              hash_table[hash_val]=*ttEntry;
+              ///hash_table[hash_val%HASH_SIZE]=*ttEntry;
+              useful[hash_val%HASH_SIZE]=1;
         }
-        else {
-              // found
-              /**if(this->equivalent(*(hash_table[hash_val].board)) ==0)
-              {
-                  printf("Collision %llu\n",hash_val);
-                  FATAL_PAUSE;
-                  print();
-                  hash_table[hash_val].board->print();
-                  FATAL_PAUSE;
-              }*/
-              HCC++;
-              ttEntry = &hash_table[hash_val];
+        else if(hash_val == hash_table[hash_val%HASH_SIZE].hash_val){
+              ttEntry = &hash_table[hash_val%HASH_SIZE];
               ///if(maximizingPlayer)
               {
-              if (ttEntry->hash_val==hash_val && ttEntry->depth >= depth)
+			if(move!=root)
+              if (//ttEntry->hash_val==hash_val &&
+                  ttEntry->depth >= depth)
               {
-                HC++;
                 if (ttEntry->exact)
                     return ttEntry->Value;
                 else if (ttEntry->lower)
@@ -2228,8 +1955,10 @@ public:
                 if (alpha >= beta)
                     return ttEntry->Value;
               }
+			  pv_uci = ttEntry->best_response;
               }
         }
+
 
 
 		if(depth == 0)
@@ -2238,7 +1967,7 @@ public:
 			move->set_evaluated(0);
 			///if(maximizingPlayer)
             {
-                    if(ttEntry->depth<=depth)
+                    if(ttEntry && ttEntry->depth<=depth)
                     {
                     ttEntry->Value = move->eval;
                     if (move->eval <= alpha)
@@ -2262,8 +1991,6 @@ public:
                     ttEntry->depth = depth;
                     }
             }
-
-
 			return move->eval;
 		}
 
@@ -2277,22 +2004,26 @@ public:
 
             if(maximizingPlayer)
             {
-                Move *tmp = new Move(*move);
+				Move obj(*move);
+                Move *tmp = &obj;
+                Move arr[218];
                 set_turn(!turn());
                 int enpass = en_passant_file;
                 en_passant_file=-1;
-                move_gen(tmp);
+                move_gen(tmp,arr);
                  int score = alphabeta(tmp, depth-3, beta-1,beta, !maximizingPlayer);
                  set_turn(!turn());
                  en_passant_file=enpass;
                  if(score>=beta){move->eval=score;move->set_evaluated(false);return score;}
             }
             else{
-                Move *tmp = new Move(*move);
+                Move obj(*move);
+                Move *tmp = &obj;
+                Move arr[218];
                 set_turn(!turn());
                 int enpass = en_passant_file;
                 en_passant_file=-1;
-                move_gen(tmp);
+                move_gen(tmp,arr);
                  int score = alphabeta(tmp, depth-3, alpha,alpha+1, !maximizingPlayer);
                  set_turn(!turn());
                  en_passant_file=enpass;
@@ -2300,34 +2031,25 @@ public:
             }
         }
 
+        Move arr[218];
 
-
-
-
-		if( !move->all_move())
+		///if(1 || !move->all_move())
+		if(root!=move)
 		{
-			//puts("\n\n\n\nbranching here\n\n\n Enter to continue");
-			//WAIT;
 			pv = NULL;
-			move_gen(move);
+			move_gen(move,arr);
 		}
 		else
 		{//for iterative deepening
 
 		    ///NEW IDEA just get the PV from here rather than sorting
-
             if(maximizingPlayer) stable_sort(move->children.begin(),move->children.end(),compare);
 			else stable_sort(move->children.begin(),move->children.end(),compare2);
 
             if(move->children.size())
 			pv = move->children[0];
-
-
-
-
 			//sort killers
 		}
-
 
 
 
@@ -2341,9 +2063,6 @@ public:
                 score = ( (INF-dist(move)-1)*(score>0?1:-1) );
             }
             move->eval = score;
-            ///print();
-            ///printf("no child score = %d\n",score);
-            ///FATAL_PAUSE;
             return score;
 
         }
@@ -2358,57 +2077,59 @@ public:
 		//if (maximizingPlayer)
         stable_sort(move->children.begin(),move->children.end(),killsort);
 
-        if(ttEntry->muci!=NULL && ttEntry->depth>=depth-3)
-        {
-            for(int i=0;i<move->children.size();i++)
-            {
-                if( move->children[i]->equal(ttEntry->muci))
-                {
-                    pv=move->children[i];
-                    for(int j=0;j<i;j++)
-                    {
-                        move->children[j+1]=move->children[j];
-                    }
-                    move->children[0]=pv;
-                    break;
-                }
-            }
-        }
+
+
+		/*if(root==move)
+		{
+		cout<<(pv_uci==NULL)<<endl;
+		if(pv_uci)cout<<pv_uci[0]<<pv_uci[1]<<pv_uci[2]<<pv_uci[3]<<endl;
+		getchar();
+		}*/
+		if(pv_uci && pv_uci[0])
+		{
+			//if(root==move){cout<<"pv_uci\n\t"<<pv_uci[0]<<pv_uci[1]<<pv_uci[2]<<pv_uci[3]<<endl;getchar();}
+			stable_sort(move->children.begin(),move->children.end(),pvsort);
+		}
+
+
         ///NOW sort by capture and promotions
         //stable_sort(move->children.begin(),move->children.end(),capsort);
         ///now capsort is not req
 
 
 		Move *killer = NULL;
-		//if(depth==4)printf("child=%d\n",move->children.size());
+		char bm[5];
+
 		if (maximizingPlayer)
 		{
 		    int alphaOrig = alpha;
-		    Position *cross_check;
-		    if(DEBUG_MODE)
-                {
-                    cross_check = new Position(*this);
-                }
-
-            int result,best_value=-DINF;
+            int best_value=-DINF;
+            for(int i=0;i<5;i++)bm[i]=move->children[0]->uci[i];
 			for(int i=0;i<move->children.size();i++)
 			{
-				//if(depth==4)printf("child #%d\n",i);
 				makemove(move->children[i]);
-				if(DEBUG_MODE)if(checksum(move->children[i])){print();move->children[i]->print();move->print();move->parent->print();printf("CS=%d\n",checksum(move->children[i]));
-				puts("MM");FATAL_PAUSE;
-				}
-				/*if(depth==4){
-				print();
-				printf("       calling depth = %d, alpha=%d, beta=%d, maximizer = %d\n",depth-1, alpha, beta, !maximizingPlayer);
-				PAUSE;}*/
 
-				result = alphabeta(move->children[i],depth - 1, alpha, beta, false);
-				best_value = max( best_value, result );
-				if(depth==MAX_DEPTH && depth>4){move->children[i]->print();
-				printf("scored %d\n",result);
-				//getchar();
+
+				int result = alphabeta(move->children[i],depth - 1, alpha, beta, false);
+
+				if(best_value<result)
+                {
+                    best_value=result;
+                    for(int j=0;j<5;j++)bm[j]=move->children[i]->uci[j];
+                }
+
+
+
+
+				if(depth==MAX_DEPTH && depth>4){
+				///cout<<"scored "<<result<<endl;
+				if(VERBOSE && !WINBOARD){cout<<"info score cp "<<result<<" depth "<<depth<<" pv ";
+				move->children[i]->print();
+				cout<<endl;
+				file<<endl;}
 				}
+
+
 
 				if (alpha<result)
                 {
@@ -2418,58 +2139,32 @@ public:
 				//alpha = max(alpha, result);
 
 				unmakemove(move->children[i]);
-				if(DEBUG_MODE)if(checksum(move->children[i])){print();move->children[i]->print();move->print();move->parent->print();printf("CS=%d\n",checksum(move->children[i]));
-				puts("UM");FATAL_PAUSE;
-				}
 
-				if(DEBUG_MODE)
-                {
-                    if(!cross_check->equivalent(*this))
-                    {
-                        puts("Unequilvalence 1.0 !!!!!!");
-                        FATAL_PAUSE;
-                        print();
-                        cross_check->print();
 
-                        move->children[i]->print();
-                        move->print();
-                        printf("this %d vs cross %d vs parent %d\n",flags, cross_check->flags, move->bits);
-                        printf("%d");
 
-                        delete cross_check;
-                    }
-                    //else puts("OK");
-                }
 
-				//makemove(move->children[i+1]);
-				//print();
-				//unmakemove(move->children[i+1]);
-
-				//print();
-				//printf("i=%d maxplayer = %d, depth = %d, alpha = %d, beta = %d\n",i,maximizingPlayer,depth,alpha,beta);
-				//PAUSE;
 				if(beta <= alpha)//cut-off
                     {
-                        if(killer->uci[5]<'A' && killer->capture<'A')
+                        if(killer->uci[4]<'A' && killer->capture<'A')
                         {
                             if(killer_count[depth]<KILLER_LEVELS )
                             {
-                                killers[depth][killer_count[depth]++] = killer->uci;
+                                for(int i=0;i<5;i++)killers[depth][killer_count[depth]][i]=killer->uci[i];
+                                killer_count[depth]++;
                             }
                             else {
-                                killers[depth][0] = killer->uci;
+								for (int i = KILLER_LEVELS-2; i >= 0; i--) for(int j=0;j<5;j++)
+								killers[depth][i + 1][j] = killers[depth][i][j];
+                                for(int i=0;i<5;i++)killers[depth][0][i]=killer->uci[i];
                             }
                             history[maximizingPlayer][CONV(killer->uci,0)][CONV(killer->uci,2)]+=depth*depth;
                         }
-
-
-
                         break;
                     }
 
 			}
 
-            if(ttEntry->depth<=depth)
+            if(ttEntry && ttEntry->depth<=depth)
             {
 			ttEntry->Value = best_value;
 			if (best_value <= alphaOrig)
@@ -2491,99 +2186,66 @@ public:
                     ttEntry->exact = true;
             }
             ttEntry->depth = depth;
-
-            if(killer!=NULL)
-            {
-                ttEntry->muci = new char[6];
-                for(int b=0;b<5;b++)ttEntry->muci[b]=killer->uci[b];
-            }
             }
 
 
 			move->eval = best_value; move->set_evaluated(false);
-			//cout<<"ALPHA max= "<<alpha<<"\n";
-			//cout<<"BETA = "<<beta<<"\n";
+            /*if(root==move)
+            {
+                print();
+                cout<<"best is ";
+                cout<<bm[0]<<bm[1]<<bm[2]<<bm[3]<<endl;
+				cout<<"Scoring alpha = "<<alpha<<" best value "<<best_value<<endl;
+				cout<<endl;
 
-
-
-			///print();
-			///printf("returning %d\n",alpha);
-			///FATAL_PAUSE;
+            }*/
+			if(ttEntry)
+				{
+					for(int i=0;i<5;i++)ttEntry->best_response[i]=bm[i];
+				}
 			return alpha;
 		}
-		else///NON MAXIMIZER
+		else//NON MAXIMIZER
 		{
 		    int best_value = DINF, betaOrig=beta;
-		    Position *cross_check;
-		    if(DEBUG_MODE)
-                {
-                    cross_check = new Position(*this);
-                }
+		    for(int i=0;i<5;i++)bm[i]=move->children[0]->uci[i];
 			for(int i=0;i<move->children.size();i++)
 			{
-				//if(depth==4)printf("child #%d\n",i);
 				makemove(move->children[i]);
-				if(DEBUG_MODE)if(checksum(move->children[i])){print();move->children[i]->print();move->print();printf("CS=%d\n",checksum(move->children[i]));
-				puts("MM");FATAL_PAUSE;
-				}
-
-				/*if(depth==4){
-				print();*/
-				///move->children[i]->print();
-				///printf("       calling depth = %d, alpha=%d, beta=%d, maximizer = %d\n",depth-1, alpha, beta, !maximizingPlayer);
-				/*PAUSE;}*/
 				int res = alphabeta(move->children[i],depth - 1, alpha, beta, true);
 
 
-				best_value = min(res,best_value);
+				if(best_value>res)
+                {
+                    best_value=res;
+                    for(int j=0;j<5;j++)bm[j]=move->children[i]->uci[j];
+                }
+
+
 				if(beta>res)
                 {
                     killer = move->children[i];
                     beta = res;
                 }
-				//beta = min(beta, res);
-
-				if(depth==MAX_DEPTH && depth>4){move->children[i]->print();
-				printf("scored %d\n",res);
-				//getchar();
+				if(depth==MAX_DEPTH && depth>4){
+				if(VERBOSE && !WINBOARD){cout<<"info score cp "<<res<<" depth "<<depth<<" pv ";
+				move->children[i]->print();
+				cout<<endl;
+				file<<endl;}
 				}
 
 				unmakemove(move->children[i]);
-				if(DEBUG_MODE)if(checksum(move->children[i])){print();move->children[i]->print();move->print();printf("CS=%d\n",checksum(move->children[i]));
-				puts("UM");FATAL_PAUSE;
-				}
-
-				//print();
-				//printf("i=%d maxplayer = %d, depth = %d, alpha = %d, beta = %d\n",i,maximizingPlayer,depth,alpha,beta);
-				//PAUSE;
-
-				if(DEBUG_MODE)
-                {
-                    if(!cross_check->equivalent(*this))
-                    {
-                        puts("Unequilvalence 2.0 !!!!!!");
-                        FATAL_PAUSE;
-                        print();
-                        cross_check->print();
-                        move->children[i]->print();
-                        printf("this %d vs cross %d vs parent %d\n",flags, cross_check->flags, move->bits);
-                        printf("%d");
-                        FATAL_PAUSE;
-                        delete cross_check;
-                    }
-                    //else puts("OK");
-                }
-
 				if(beta <= alpha)//cut-off
                     {
-                        if(killer->uci[5]<'A' && killer->capture<'A')
+                        if(killer->uci[4]<'A' && killer->capture<'A')
                         {
                             if(killer_count[depth]<KILLER_LEVELS )
                             {
-                                killers[depth][killer_count[depth]++] = killer->uci;
+                                for(int i=0;i<5;i++)killers[depth][killer_count[depth]][i]=killer->uci[i];
+                                killer_count[depth]++;
                             }
                             else {
-                                killers[depth][0] = killer->uci;
+                                for(int i=0;i<5;i++)killers[depth][0][i]=killer->uci[i];
                             }
 
                             history[maximizingPlayer][CONV(killer->uci,0)][CONV(killer->uci,2)]+=depth*depth;
@@ -2594,7 +2256,7 @@ public:
 			}
 			move->eval = best_value; move->set_evaluated(false);
 
-			if(ttEntry->depth<=depth)
+			if(ttEntry && ttEntry->depth<=depth)
             {
 			ttEntry->Value = best_value;
 			if (best_value <= alpha)
@@ -2616,26 +2278,41 @@ public:
                     ttEntry->exact = true;
             }
             ttEntry->depth = depth;
-            if(killer!=NULL)
-            {
-                ttEntry->muci = new char[6];
-                for(int b=0;b<5;b++)ttEntry->muci[b]=killer->uci[b];
-            }
+
             }
 
+            /*if(root==move)
+            {
+                print();
+                cout<<"best is ";
+                cout<<bm[0]<<bm[1]<<bm[2]<<bm[3]<<endl;
+                cout<<"Scoring beta = "<<beta<<endl;
+				cout<<endl;
+
+            }*/
+			if(ttEntry)
+				{
+					for(int i=0;i<5;i++)ttEntry->best_response[i]=bm[i];
+				}
 			return beta;
 		}
 	}
-	Move* best_move(Move *move,int d, int &score,int alpha, int beta)
+	Move* best_move(Move *move,int d, int &score,int alpha=-DINF, int beta=DINF)
 	{
 		score = alphabeta(move,d, alpha, beta, turn()==WHITE);
-		printf("Score = %d\n",score);
-		for(int i=0;i<move->children.size();i++)if(score == move->children[i]->eval)return move->children[i];
-        if(move->children.size()==0){printf("GAME ENDED\n");exit(0);}
-
-        if(DEBUG_MODE){printf("may play a bad move now\n");
-		FATAL_PAUSE;}
-
+		///if(VERBOSE)cout<<"Score = "<<score<<endl;
+		for(int i=0;i<move->children.size();i++)if(score == move->children[i]->eval)
+        {
+            if(VERBOSE && !WINBOARD){cout<<"info score cp "<<score<<" depth "<<d<<" pv ";
+				move->children[i]->prints();
+				cout<<endl;
+				}
+            return move->children[i];
+        }
+        if(move->children.size()==0)
+            {
+                cout<<"GAME ENDED\n";exit(0);
+            }
 		Move *bm = move->children[0];
         if(turn())
         {
@@ -2648,104 +2325,25 @@ public:
                 if(move->children[i]->eval < bm->eval )bm=move->children[i];
         }
         return bm;
-		/*if(DEBUG_MODE){
-		puts("ERROR in best move");
-		FATAL_PAUSE;}
-		return NULL;*/
-	}
-	Move* best_move(Move *move,int d)
-	{
-		int score = alphabeta(move,d, -DINF, DINF, turn()==WHITE);
-		printf("Score = %d\n",score);
-		for(int i=0;i<move->children.size();i++)if(score == move->children[i]->eval)return move->children[i];
-
-		if(move->children.size()==0){printf("GAME ENDED\n");exit(0);}
-
-
-        if(DEBUG_MODE){printf("may play a bad move now\n");
-		FATAL_PAUSE;}
-
-		Move *bm = move->children[0];
-        if(turn())
-        {
-            for(int i=1;i<move->children.size();i++)
-                if(move->children[i]->eval > bm->eval )bm=move->children[i];
-
-        }
-        else{
-            for(int i=1;i<move->children.size();i++)
-                if(move->children[i]->eval < bm->eval )bm=move->children[i];
-        }
-        return bm;
-		/*if(DEBUG_MODE){
-		puts("ERROR in best move");
-		FATAL_PAUSE;}
-		return NULL;*/
-	}
-
-	int checksum(Move *move)//only for testing
-	{
-		int piece_count = 2; //the kings
-		//PIECE BASED (just for testing)
-		int i,j,k;
-		char board[64];
-		for(i=0;i<64;i++)
-		{
-			board[i]=EMPTY;
-		}
-		board[pieces[KING][WHITE][0]] = piece_notation[KING];
-		board[pieces[KING][BLACK][0]] = piece_notation[KING] + 32;
-
-		for(k=0;k<NUM_TYPES;k++)
-		{
-			for(j=0;j<pieces[k][WHITE].size();j++)board[pieces[k][WHITE][j]] = piece_notation[k];
-			for(j=0;j<pieces[k][BLACK].size();j++)board[pieces[k][BLACK][j]] = piece_notation[k]+32;
-			piece_count += pieces[k][WHITE].size() + pieces[k][BLACK].size();
-		}
-
-
-		for(i=7;i>=0;i--)
-		{
-			for(j=0;j<8;j++)if(board[i*8+j]!=symbol(i,j))return i*8+j+1;
-		}
-
-
-
-		for(i=63;i>=0;i--)
-		{
-			if(board[i]==EMPTY)
-			{
-				if(getBit(colorPiece[WHITE],i))return i+1;
-				if(getBit(colorPiece[BLACK],i))return i+1;
-			}
-			else if(board[i]>='a')
-			{
-				if(getBit(colorPiece[WHITE],i))return i+1;
-			}
-			else if(board[i]>='A')
-			{
-				if(getBit(colorPiece[BLACK],i))return i+1;
-			}
-		}
-		return 0;
 	}
 };
 
-/**void evaltest(char *fen)
+bool move_like(string s)
 {
-
-    Position *tmp=new Position(fen);
-    tmp->print();
-    Move *tm = new Move(tmp->flags,tmp->en_passant_file,-1,-1);
-    printf("eval = %d\n",tmp->evaluate(tm));
-    ///printf("QS = %d\n",tmp->Quiescence(tm,tmp->turn(),-INF,INF)*(tmp->turn()==WHITE?1:-1));
-    FATAL_PAUSE;
-}*/
+    if(s.length()>5)return 0;
+    if(s.length()<4)return 0;
+    if(s.at(0)<'a' || s.at(0)>'h')return 0;
+    if(s.at(2)<'a' || s.at(2)>'h')return 0;
+    if(s.at(1)<'1' || s.at(1)>'8')return 0;
+    if(s.at(3)<'1' || s.at(3)>'8')return 0;
+    return 1;
+}
 
 int Position::object_count = 0;
 int main()
 {
     srand ( time(NULL) );
+    hash_table = new Bundle[HASH_SIZE];
     for(int i=0;i<13 ;i++)for(int j=0;j<64;j++){random_bit_string[i][j]=lrand();}
     dx[PAWN].push_back(1);
     dx[PAWN].push_back(-1);
@@ -2773,118 +2371,342 @@ int main()
     append_vector_elements(dx[KING],dx[QUEEN]);append_vector_elements(dy[KING],dy[QUEEN]);
 
 	thinking = new Position();
-	Position pos;
-	///Position pos("r5k1/6p1/p1b2B2/3ppp1q/1P3Q2/P1N4P/2P4K/6R1 w - - 0 1");
-	///Position pos("r1bq1rk1/pppp1pp1/2nb1n2/4p1P1/2P1P3/2NP4/PP3P2/R1BQKBNR b KQ - 0 8");
-	///Position pos("r3kb1r/pbp2ppp/1p1q1n2/3pN3/4pP2/2Q1P3/PPPP2PP/RNB1K2R b KQkq f3 0 11");
-	///Position pos("r3kb1r/pbp2ppp/1p1q1n2/3pN3/4p3/2Q1P3/PPPP1PPP/RNB1K2R w KQkq - 4 11");
-	///Position pos("4k3/8/8/8/8/8/8/4K2R w K - 0 1");
-	///Position pos("r1b2rk1/pppp1pp1/2n2q2/2b1p3/2P1P3/2NP4/PP2KP2/R1BQ1BNR b - - 1 10");
-	///Position pos("4k3/8/4K3/8/8/7p/8/8 b - - 0 1");
-	///Position pos("2k5/7Q/8/8/3K4/8/8/8 w - - 0 1");
+	Position *pos=NULL;
+	///pos=new Position();
 
-	///Position pos("6k1/r2b1rpp/N2Qp3/1p3p2/3P1P2/2q2BP1/7P/R4RK1 w - - 1 29");
+	///Move *base_move;
+	///base_move = new Move(pos->flags,pos->en_passant_file,-1,-1);
+	///pos->print();
+	Move *mv=NULL;/// = base_move;
+	///char s[7];
+	Move *bes =NULL;
 
-	Move *base_move;
-	base_move = new Move(pos.flags,pos.en_passant_file,-1,-1);
-	pos.print();
+	///Move *sp = NULL;
 
-
-
-	Move *mv = base_move;
-	char s[7];
-	Move *bes ;
+	string Line,prevLine="Aditya";
+    cout.setf (ios::unitbuf);
+    file.setf (ios::unitbuf);
 
 
-	if(DEBUG_MODE)if(pos.checksum(mv)){pos.print();mv->print();mv->parent->print();puts("MainM");printf("CS = %d\n",pos.checksum(mv));FATAL_PAUSE;}
+    ///cout.setbuf(0,0);
+    ///file.setbuf(0,0);
 
-	pos.print();
+        if (! file) {
+        cerr << "can't open output file \"" << filename << "\""
+        << endl;
+        exit (EXIT_FAILURE);
+        }
 
-
-
-	pos.print();
-
-
-	root = mv;
-
-    for(int times = 0;times < TIMES;times++)
-	{
-	    rqnodes=0;
-		int alpha = -DINF, beta = DINF;
-		memset (history, 0, sizeof(history));
-
-           /** puts("\nYour turn:");
-            scanf("%s",s);
-            pos.Play(mv,s);
-            pos.print();*/
+	///istringstream cin("ucinewgame\nposition startpos\ngo\nquit");
+	///istringstream cin("ucinewgame\nposition fen r1bq1rk1/pppp1pp1/2nb1n2/4p1P1/2P1P3/2NP4/PP3P2/R1BQKBNR b KQ - 0 8\ngo\nquit");
 
 
-        MAX_DEPTH=3;
+	while (getline (cin, Line))
+    {
+        file << Line <<endl;
+        file<<"started = "<<started<<endl;
+        istringstream iss(Line);
+        istringstream iss2(prevLine);
 
-		for(int k=MIN_DEPTH;k<=MAX_DEPTH;)
-		{
-		    hash_table.clear();///VERY imp to avoid the iterative deep. bugs
-			int val;
-			printf("k=%d\n",k);
+        if(move_like(Line))
+        {
+            file<<"Looks like a move\n";
+            ///if(sp==NULL)sp=mv;
 
-			bes = pos.best_move(mv,k,val,alpha,beta);
-			///if(k==MIN_DEPTH) { mv->print_all_child();FATAL_PAUSE; }
+            char *s = const_cast<char*>(Line.c_str());
+            pos->Play(mv,s);
+            file<<"playing "<<s<<endl;
 
-			/**if( (val<=alpha || val>=beta) && !(alpha==-DINF && beta == DINF)){
-				puts("REPEAT");
-				//getchar();
-				//mv->delchild();
 
-				//mv->children.clear();
-				//mv->set_all_move(0);
-				alpha=-DINF;beta=DINF;continue;
-			}
-			alpha = val - WINDOW;
-			beta = val + WINDOW;*/
-			///BUGGY ASP search
-			bes->print();
-			///bes->print_all_child();
-            for(int var = 0;var<mv->children.size();var++)if(mv->children[var]!=bes)
+            pos->prints();
+            pos->prints(&cout);
+            if(started)Line = "go";
+        }
+
+        if (Line == "uci")
+        {
+            cout << "id name Conqueror" << endl;
+            cout << "id author Aditya Pande, India" << endl;
+            cout << "uciok" << endl;
+            file << "id name Conqueror" << endl;
+            file << "id author Aditya Pande, India" << endl;
+            file << "uciok" << endl;
+
+        }
+        else if (Line == "isready")
+        {
+            cout << "readyok" << endl;
+            file << "me:\treadyok" << endl;
+        }
+
+        else if (Line == "ucinewgame")
+        {
+            ///cout<<"Cleaning up\n";
+
+
+            ///if(sp!=NULL)sp->delchild();
+            ///sp = NULL;
+            max_time = 300000;
+            LIMIT = max_time/NORM;
+            TimeTrouble = 100;
+            started = 1;
+
+            WINBOARD = 0;
+
+			/**if(mv!=NULL)
+			{
+				Move *tmp = mv;
+				mv=mv->parent;
+				delete tmp;
+			}*/
+			if(pos!=NULL)delete pos;
+
+
+        }
+
+        else if(Line.substr(0,3)=="pos" && (Line.find(prevLine) != std::string::npos) )///continuing old game
+        {
+            ///cout<<"Lets continue\n";
+            vector<string> tokens;copy(istream_iterator<string>(iss),istream_iterator<string>(),back_inserter<vector<string> >(tokens));
+            vector<string> tokens2;copy(istream_iterator<string>(iss2),istream_iterator<string>(),back_inserter<vector<string> >(tokens2));
+            for(int i=tokens2.size();i<tokens.size();i++)
             {
-                mv->children[var]->delchild();
+                char *s = const_cast<char*>(tokens[i].c_str());
+                pos->Play(mv,s);
+            }
+        }
+
+        else if (Line.substr(0,17) == "position startpos" || Line.substr(0,3)=="new")
+            {
+
+                if(Line.substr(0,3)=="new")
+                {
+                ///if(sp!=NULL)sp->delchild();
+                ///sp = NULL;
+                max_time = 300000;
+                LIMIT = max_time/NORM;
+                TimeTrouble = 100;
+                started = 1;
+
+				/**if(mv!=NULL)
+				{
+					Move *tmp = mv;
+					mv=mv->parent;
+					delete tmp;
+				}*/
+				if(pos!=NULL)delete pos;
+
+
+                }
+                pos = new Position();
+                mv = new Move();
+                mv->adjMove(pos->flags,pos->en_passant_file,-1,-1);
+                vector<string> tokens;copy(istream_iterator<string>(iss),istream_iterator<string>(),back_inserter<vector<string> >(tokens));
+                if(!WINBOARD)
+                {
+                for(int i=0;i<tokens.size();i++)
+                {
+                    if(tokens[i]=="moves")
+                    {
+                        for(int j=i+1;j<tokens.size();j++)
+                        {
+                            char *s = const_cast<char*>(tokens[j].c_str());
+                            cout<<"Playing :"<<tokens[j]<<endl;
+                            pos->Play(mv,s);
+                        }
+                        break;
+                    }
+                }
+                }
+                else{
+                    char *s = const_cast<char*>(tokens[tokens.size()-1].c_str());
+                    pos->Play(mv,s);
+                }
+                if(!WINBOARD)pos->print();
             }
 
-			cout<<endl<<sizeof(Position)<<" is size of one object";
-            printf("\n %d is size of a move",sizeof(Move));
-            cout<<endl<<Position::get_object_count()<<" objects created\n";
-            printf("\nMove created=%d\n",counter);
-            printf("rqnodes = %d,Qnodes = %d / %d and ht %d / %d\n",rqnodes,qnodes,tnodes,HC,HCC);
-            if(k==MAX_DEPTH && rqnodes<100000)MAX_DEPTH++;
-			k++;
-			for(int zx=0;zx<15;zx++)killer_count[zx]=0;
-
-		}
-		pos.makemove(bes);
-		pos.print();
-		bes->print();
-
-		Move*tmp=bes;
-			for(int i=1;i<MAX_DEPTH;i++)
+        else if (!WINBOARD && Line.substr(0,12) == "position fen")
+        {
+            char *fen = new char[Line.length()];
+            int ll = Line.length();
+            for(int i=13;i<ll;i++)
             {
-                for(int j=0;j<tmp->children.size();j++)
-                if(tmp->children[j]->eval==tmp->eval){
-                    tmp=tmp->children[j];
-                    tmp->print();
+                fen[i-13]=Line.at(i);
+            }
+            fen[ll-13]=0;
+            pos = new Position(fen);
+            delete [] fen;
+            ///pos->print();
+
+            ///if(mv!=NULL){mv->delchild();delete mv;}
+                mv = new Move();
+                mv->adjMove(pos->flags,pos->en_passant_file,-1,-1);
+                vector<string> tokens;copy(istream_iterator<string>(iss),istream_iterator<string>(),back_inserter<vector<string> >(tokens));
+                for(int i=0;i<tokens.size();i++)
+                {
+                    if(tokens[i]=="moves")
+                    {
+                        for(int j=i+1;j<tokens.size();j++)
+                        {
+                            char *s = const_cast<char*>(tokens[j].c_str());
+                            pos->Play(mv,s);
+                        }
+                        break;
+                    }
+                }
+                pos->print();
+        }
+        else if(Line.substr (0, 5) == "force")
+        {
+            started = 0;
+        }
+        else if (Line.substr (0, 2) == "go")
+        {
+            // "go wtime 300000 btime 300000 winc 0 binc 0"
+            ///cout << "bestmove e7e5" << endl;
+            ///file << "me:\tbestmove e7e5" << endl;
+
+            ///if(sp==NULL)sp=mv;
+
+            started = 1;
+            file<<"started x = "<<started<<endl;
+
+            vector<string> tokens;copy(istream_iterator<string>(iss),istream_iterator<string>(),back_inserter<vector<string> >(tokens));
+            if(tokens.size()>4)
+            {
+                int result;
+                stringstream(tokens[pos->turn()?2:4]) >> result;
+                if(result > max_time)
+                {max_time = result;
+                LIMIT = max_time/NORM;
+                }
+                if(result < 15000)
+                {
+                    TimeTrouble = 4;
                 }
             }
-		mv = bes;
-		if(TIMES>1)
-        {
-		puts("\nYour turn:");
-		scanf("%s",s);
-		pos.Play(mv,s);
-		pos.print();
+                    rqnodes=0;
+                    root = mv;
+                    int alpha = -DINF, beta = DINF;
+                    memset (history, 0, sizeof(history));
+                    MAX_DEPTH=3;
+					memset(useful,0,sizeof(useful));
+
+					Move arr[218];
+					pos->move_gen(mv,arr);
+
+                    for(int k=MIN_DEPTH;k<=MAX_DEPTH;)
+                    {
+                        //hash_table.clear();///VERY imp to avoid the iterative deep. bugs
+                        int val;
+                        if(VERBOSE)cout<<"k = "<<k<<endl;
+                        bes = pos->best_move(mv,k,val,alpha,beta);
+                        if(VERBOSE && bes)bes->print();
+
+						if(bes && (val<=alpha || val>=beta))
+						{
+							alpha=-DINF;beta=DINF;
+							//cout<<"REPEAT\n";
+							//file<<"REPEAT\n";
+							bes = pos->best_move(mv,k,val,alpha,beta);
+						}
+
+                        if(!(-HINF<val && val < HINF))
+                        {
+                            MAX_DEPTH = 1;
+                        }
+
+
+                        else if(k==MAX_DEPTH && rqnodes<LIMIT && MAX_DEPTH<TimeTrouble)MAX_DEPTH++;
+                        k++;
+                        for(int zx=0;zx<100;zx++)killer_count[zx]=0;
+
+                        if(bes == NULL)
+                            {
+                                if(val > HINF)cout<<"result 1-0 {White mates}";
+                                else if(val < -HINF)cout<<"result 0-1 {Black mates}";
+                                else cout<<"result 1/2-1/2 {Draw}";
+                                cout<<endl;
+                            }
+						//getchar();
+						alpha = val-WINDOW;
+						beta = val+WINDOW;
+						if(!WINBOARD)cout<<"rq"<<rqnodes<<endl;
+                    }
+
+                    if(bes!=NULL)
+                    {
+
+
+                    pos->makemove(bes);
+                    ///pos->print();
+
+
+
+                    /**Move*tmp=bes;
+                        for(int i=1;i<MAX_DEPTH;i++)
+                        {
+                            for(int j=0;j<tmp->children.size();j++)
+                            if(tmp->children[j]->eval==tmp->eval){
+                                tmp=tmp->children[j];
+                                tmp->print();
+                            }
+                        }*/
+                    mv = bes;
+
+
+                    if(!WINBOARD){cout<<"bestmove ";
+                    file<<"bestmove ";}
+                    else{
+                        cout<<"move ";
+                    file<<"move ";
+                    }
+                    bes->prints();
+                    cout<<endl;
+                    file<<endl;
+                    }
         }
-	}
-	base_move->delchild();
-	cout<<endl<<sizeof(Position)<<" is size of one object";
-	printf("\n %d is size of a move",sizeof(Move));
-	cout<<endl<<Position::get_object_count()<<" objects created\n";
-	printf("\nMove created=%d\n",counter);
+        else if (Line.substr (0, 4) == "quit")
+        {
+			/**if(mv!=NULL)
+			{
+				Move *tmp = mv;
+				mv=mv->parent;
+				delete tmp;
+			}*/
+			if(pos!=NULL)delete pos;
+            exit(0);
+        }
+        else if (Line.substr (0, 5) == "level")
+        {
+            vector<string> tokens;copy(istream_iterator<string>(iss),istream_iterator<string>(),back_inserter<vector<string> >(tokens));
+            if(tokens.size()>2)
+            {
+                int result;
+                stringstream(tokens[2]) >> result;
+                result*=60000;
+                if(result > max_time)
+                {max_time = result;
+                LIMIT = max_time/NORM;
+                }
+            }
+        }
+
+        else if (Line.substr (0, 6) == "xboard")
+        {
+            WINBOARD = 1;
+        }
+
+        /*else
+        {
+            // Command not handled
+            cout << "what?" << endl;
+            file << "me:\twhat?" << endl;
+        }*/
+
+        ///cout.flush();
+        ///file.flush();
+        prevLine.assign(Line);
+    }
 	return 0;
 }
