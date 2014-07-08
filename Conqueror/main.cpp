@@ -18,6 +18,8 @@
 @author adityapande
 */
 
+///bug fixed in promotion move generation
+
 ///bug fixed (memory leaks)
 
 ///bug fixed main changes uci[5] -> uci[4]....
@@ -35,17 +37,26 @@
 #include<string>
 #include<iterator>
 #include<string.h>
+#include<map>
+
+int g1=0,g2=0,g3=0;
+
+
+
 const int TIMES = 1000;
+const int FUTILE_MARGIN = 200;
 const int VERBOSE = 10;
 #define CONV(a,b) (int)(a[b+1])*8+a[b]-489
 const int NUM_TYPES = 5; //numtypes does not include king
+
+
 
 int WINBOARD=0;
 const char EMPTY = '.';
 const int INF = 1000000;
 const int HINF = 500000;
 const int DINF = 2000000;
-const int QUIET_CUT = 10;
+int QUIET_CUT = 10;
 const int KILL_WINDOW = 2;
 const int WINDOW = 33;
 int MAX_DEPTH = 3;
@@ -56,7 +67,7 @@ char killers[100][KILLER_LEVELS][5];
 
 int killer_count[100]={0};
 
-const int NORM = 10;
+const int NORM = 3;
 
 int max_time = 300000;
 
@@ -104,6 +115,11 @@ int rqnodes = 0;
 
 using namespace std;
 typedef unsigned long long int LL;
+
+LL hashing;
+
+map<LL,int> move_list;
+
 
 string filename = "out.txt";
 ofstream file (filename.c_str());
@@ -172,7 +188,7 @@ LL lrand()
 }
 
 template <class T>
-inline void setBit(T &bitvector,int n,bool b)//tested OK
+inline void setBit(T &bitvector,int n,bool b)
 {
 	if(b)
 		bitvector = bitvector | ( ((T)1)<<n );
@@ -180,7 +196,7 @@ inline void setBit(T &bitvector,int n,bool b)//tested OK
 		bitvector = bitvector & ~( ((T)1)<<n );
 }
 template <class T>
-inline bool getBit(T bitvector,int n)//tested OK
+inline bool getBit(T bitvector,int n)
 {
 	return (bitvector >> n)&( ((T)1) );
 }
@@ -256,6 +272,7 @@ class Move{
     //Move(int flags,int enpass,int start,int end,int reorder = 0, char promotion=0,bool en_pass_played=0)
     void adjMove(int flags,int enpass,int start,int end,int reorder = 0, char promotion=0,bool en_pass_played=0)
     {
+
         if(start==end){uci[0]=uci[1]=uci[2]=uci[3]='0';uci[4]=0;}
         else{
             uci[0]=(start&7)+'a';
@@ -631,17 +648,20 @@ public:
 		object_count++;
 		//init();
         init("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        hashing=hash();
 	}
 	Position(char *fen)
 	{
 	object_count++;
 	init(fen);
+	hashing=hash();
     }
-	Position(Position &z)//copy constructor
+	/*Position(Position &z)//copy constructor
 	{
 		object_count++;
 		copy_from(z);
-	}
+
+	}*/
 
 
 
@@ -1160,7 +1180,7 @@ public:
 				if(!getBit(prev_child->pieceType[ROOK] & prev_child->colorPiece[BLACK],56)){prev_child->set_left_castle_possible(0,BLACK);}
 				if(!getBit(prev_child->pieceType[ROOK] & prev_child->colorPiece[BLACK],63)){prev_child->set_right_castle_possible(0,BLACK);}
 
-				if(PROMOTION)
+				if(PROMOTION>0)
 				{
 					while(PROMOTION--){
                     Move *now = &arr[generated];
@@ -1522,6 +1542,7 @@ public:
 			setBit(colorPiece[turn],pos,false);
 			setBit(colorPiece[turn],npos,true);
 
+			//move_list[hash()]++;
 
 			return;
 		}
@@ -1565,9 +1586,12 @@ public:
 			setBit(pieceType[ptype],npos,true);
 		}
 
+		//move_list[hash()]++;
+
 	}
 	void unmakemove(Move *move)
 	{
+	    //move_list[hash()]--;
 		flags = move->parent->bits;
 		bool en_pass = move->get_last_en();
 
@@ -1575,6 +1599,8 @@ public:
         en_passant_file = move->parent->enpassfile;
 		//null move
 		if(move->uci[0]=='0')return;
+
+
 
 
 		int npos=(move->uci[1]-'1')*8+(move->uci[0]-'a'),pos=(move->uci[3]-'1')*8+(move->uci[2]-'a');
@@ -1594,7 +1620,6 @@ public:
 
 			setBit(colorPiece[turn],pos,false);
 			setBit(colorPiece[turn],npos,true);
-
 			return;
 		}
 		int mp = 0;
@@ -2079,6 +2104,8 @@ public:
 
 
 
+
+
 		/*if(root==move)
 		{
 		cout<<(pv_uci==NULL)<<endl;
@@ -2100,17 +2127,55 @@ public:
 		Move *killer = NULL;
 		char bm[5];
 
+		/**if(depth == 1 && !isCheck(turn()) && alpha > -HINF && alpha < HINF && beta > -HINF && beta < HINF)
+                {
+                    move->eval = maximizingPlayer?Quiescence(move,maximizingPlayer, alpha, beta): -Quiescence(move,maximizingPlayer, -beta, -alpha);//way faster
+                    move->set_evaluated(0);
+                    if(maximizingPlayer && move->eval+VALUE[BISHOP]<alpha)
+                        {
+                            prints(&cout);
+                            cout<<"Alpha="<<alpha<<endl;
+                            getchar();
+                            move->eval=alpha;return alpha;
+                        }
+                    if(!maximizingPlayer && move->eval-VALUE[BISHOP]>beta)
+                        {
+                            prints(&cout);
+                            cout<<"Beta="<<beta<<endl;
+                            getchar();
+                            move->eval=beta;return beta;
+                        }
+                }*/
+
 		if (maximizingPlayer)
 		{
 		    int alphaOrig = alpha;
             int best_value=-DINF;
+
             for(int i=0;i<5;i++)bm[i]=move->children[0]->uci[i];
 			for(int i=0;i<move->children.size();i++)
 			{
 				makemove(move->children[i]);
 
+				int futile=DINF;
+				/**if(depth==2 && alpha<HINF && alpha>-HINF && beta<HINF && beta>-HINF && move->capture<'A' && !isCheck(turn()))
+                {
+                    QUIET_CUT=0;
+                    futile = alphabeta(move->children[i],0, alpha, beta, false)+FUTILE_MARGIN;
+                    QUIET_CUT=10;
+                }*/
+                /**if(depth==3 && alpha<HINF && alpha>-HINF && beta<HINF && beta>-HINF && move->capture<'A' && !isCheck(turn()))
+                {
+                    QUIET_CUT=0;
+                    futile = alphabeta(move->children[i],0, alpha, beta, false)+FUTILE_MARGIN*2;
+                    QUIET_CUT=10;
+                }*/
 
-				int result = alphabeta(move->children[i],depth - 1, alpha, beta, false);
+                int result;
+                g2++;
+                if(futile<alpha){result = alpha;g1++;}
+                else
+                result = alphabeta(move->children[i],depth - 1, alpha, beta, false);
 
 				if(best_value<result)
                 {
@@ -2123,8 +2188,8 @@ public:
 
 				if(depth==MAX_DEPTH && depth>4){
 				///cout<<"scored "<<result<<endl;
-				if(VERBOSE && !WINBOARD){cout<<"info score cp "<<result<<" depth "<<depth<<" pv ";
-				move->children[i]->print();
+				if(VERBOSE && !WINBOARD){cout<<"info score cp "<<(result*(maximizingPlayer?1:-1))<<" depth "<<depth<<" pv ";
+				move->children[i]->prints();
 				cout<<endl;
 				file<<endl;}
 				}
@@ -2212,24 +2277,51 @@ public:
 			for(int i=0;i<move->children.size();i++)
 			{
 				makemove(move->children[i]);
-				int res = alphabeta(move->children[i],depth - 1, alpha, beta, true);
 
-
-				if(best_value>res)
+				int futile=-DINF;
+				/**if(depth==2)
                 {
-                    best_value=res;
+                    //QUIET_CUT=2;
+                    futile = alphabeta(move->children[i],0, alpha, beta, true)-FUTILE_MARGIN;
+                    //QUIET_CUT=10;
+                }*/
+
+                /**if(depth==2 && alpha<HINF && alpha>-HINF && beta<HINF && beta>-HINF && move->capture<'A' && !isCheck(turn()))
+                {
+                    QUIET_CUT=0;
+                    futile = alphabeta(move->children[i],0, alpha, beta, true)-FUTILE_MARGIN;
+                    QUIET_CUT=10;
+                }
+                if(depth==3 && alpha<HINF && alpha>-HINF && beta<HINF && beta>-HINF && move->capture<'A' && !isCheck(turn()))
+                {
+                    QUIET_CUT=0;
+                    futile = alphabeta(move->children[i],0, alpha, beta, true)-FUTILE_MARGIN*2;
+                    QUIET_CUT=10;
+                }*/
+
+
+                int result;
+                if(futile>beta)result = beta;
+                else result = alphabeta(move->children[i],depth - 1, alpha, beta, true);
+
+				//int res = alphabeta(move->children[i],depth - 1, alpha, beta, true);
+
+
+				if(best_value>result)
+                {
+                    best_value=result;
                     for(int j=0;j<5;j++)bm[j]=move->children[i]->uci[j];
                 }
 
 
-				if(beta>res)
+				if(beta>result)
                 {
                     killer = move->children[i];
-                    beta = res;
+                    beta = result;
                 }
 				if(depth==MAX_DEPTH && depth>4){
-				if(VERBOSE && !WINBOARD){cout<<"info score cp "<<res<<" depth "<<depth<<" pv ";
-				move->children[i]->print();
+				if(VERBOSE && !WINBOARD){cout<<"info score cp "<<(result*(maximizingPlayer?1:-1))<<" depth "<<depth<<" pv ";
+				move->children[i]->prints();
 				cout<<endl;
 				file<<endl;}
 				}
@@ -2303,10 +2395,15 @@ public:
 		///if(VERBOSE)cout<<"Score = "<<score<<endl;
 		for(int i=0;i<move->children.size();i++)if(score == move->children[i]->eval)
         {
-            if(VERBOSE && !WINBOARD){cout<<"info score cp "<<score<<" depth "<<d<<" pv ";
+            if(VERBOSE && !WINBOARD){cout<<"info score cp "<<(score*(turn()?1:-1))<<" depth "<<d<<" pv ";
 				move->children[i]->prints();
 				cout<<endl;
 				}
+            if(VERBOSE && WINBOARD){cout<<d<<' '<<(score*(turn()?1:-1))<<" 1000 "<<rqnodes<<' ';
+				move->children[i]->prints();
+				cout<<endl;
+				}
+
             return move->children[i];
         }
         if(move->children.size()==0)
@@ -2340,7 +2437,7 @@ bool move_like(string s)
 }
 
 int Position::object_count = 0;
-int main()
+int main(int argc, char* argv[])
 {
     srand ( time(NULL) );
     hash_table = new Bundle[HASH_SIZE];
@@ -2398,7 +2495,9 @@ int main()
         }
 
 	///istringstream cin("ucinewgame\nposition startpos\ngo\nquit");
+	///istringstream cin("ucinewgame\nposition fen r1bqk1nr/ppp2ppp/2np4/2b1p3/2B1P3/2N2N2/PPPP1PPP/R1BQK2R w KQkq - 0 5\ngo\nquit");
 	///istringstream cin("ucinewgame\nposition fen r1bq1rk1/pppp1pp1/2nb1n2/4p1P1/2P1P3/2NP4/PP3P2/R1BQKBNR b KQ - 0 8\ngo\nquit");
+	///istringstream cin("ucinewgame\nposition fen 4r3/6pk/7p/8/1pp1BK2/7P/PBP3P1/8 b - - 3 41\ngo\nquit");
 
 
 	while (getline (cin, Line))
@@ -2556,6 +2655,39 @@ int main()
                 }
                 pos->print();
         }
+
+        else if (WINBOARD && Line.substr(0,8) == "setboard")
+        {
+            char *fen = new char[Line.length()];
+            int ll = Line.length();
+            for(int i=9;i<ll;i++)
+            {
+                fen[i-9]=Line.at(i);
+            }
+            fen[ll-9]=0;
+            pos = new Position(fen);
+            delete [] fen;
+            ///pos->print();
+
+            ///if(mv!=NULL){mv->delchild();delete mv;}
+                mv = new Move();
+                mv->adjMove(pos->flags,pos->en_passant_file,-1,-1);
+                vector<string> tokens;copy(istream_iterator<string>(iss),istream_iterator<string>(),back_inserter<vector<string> >(tokens));
+                for(int i=0;i<tokens.size();i++)
+                {
+                    if(tokens[i]=="moves")
+                    {
+                        for(int j=i+1;j<tokens.size();j++)
+                        {
+                            char *s = const_cast<char*>(tokens[j].c_str());
+                            pos->Play(mv,s);
+                        }
+                        break;
+                    }
+                }
+                pos->print();
+        }
+
         else if(Line.substr (0, 5) == "force")
         {
             started = 0;
@@ -2632,6 +2764,7 @@ int main()
 						alpha = val-WINDOW;
 						beta = val+WINDOW;
 						if(!WINBOARD)cout<<"rq"<<rqnodes<<endl;
+						//cout<<"Ratio="<<g1<<'/'<<g2<<" "<<g3<<endl;
                     }
 
                     if(bes!=NULL)
@@ -2696,7 +2829,11 @@ int main()
         {
             WINBOARD = 1;
         }
-
+        else if(Line.substr(0,10)=="protover 2")
+        {
+            cout<<"feature setboard=1 variants=\"normal\""<<endl;
+            file<<"feature setboard=1 variants=\"normal\""<<endl;
+        }
         /*else
         {
             // Command not handled
